@@ -30,9 +30,11 @@ class SensorService : Service(), SensorEventListener {
     private var accelerometer: Sensor? = null
     private var gyroscope: Sensor? = null
 
-    // 4 seconds at 50Hz (20ms) = 200 samples
-    val accelerometerBuffer = SensorRingBuffer(200)
-    val gyroscopeBuffer = SensorRingBuffer(200)
+    // 4 seconds rolling window (nanoseconds), max capacity 1000 items
+    val accelerometerBuffer = SensorRingBuffer(timeWindowNanos = 4_000_000_000L, maxCapacity = 1000)
+    val gyroscopeBuffer = SensorRingBuffer(timeWindowNanos = 4_000_000_000L, maxCapacity = 1000)
+
+    private var isListening = false
 
     override fun onCreate() {
         super.onCreate()
@@ -44,20 +46,25 @@ class SensorService : Service(), SensorEventListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundSpecialUse()
         
-        // Handle missing sensors gracefully without crashing
-        if (accelerometer != null) {
-            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
-        } else {
-            Log.w(TAG, "Accelerometer not available on this device!")
+        if (!isListening) {
+            // Handle missing sensors gracefully without crashing
+            if (accelerometer != null) {
+                sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
+            } else {
+                Log.w(TAG, "Accelerometer not available on this device!")
+            }
+
+            if (gyroscope != null) {
+                sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME)
+            } else {
+                Log.w(TAG, "Gyroscope not available on this device!")
+            }
+            isListening = true
         }
 
-        if (gyroscope != null) {
-            sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME)
-        } else {
-            Log.w(TAG, "Gyroscope not available on this device!")
-        }
-
-        return START_STICKY // Survive screen-off and backgrounding
+        // START_STICKY is intentional: crash detection is a continuous service. If killed by OS memory pressure, 
+        // it must be restarted automatically to ensure rider safety.
+        return START_STICKY
     }
 
     private fun startForegroundSpecialUse() {
@@ -115,6 +122,7 @@ class SensorService : Service(), SensorEventListener {
     override fun onDestroy() {
         super.onDestroy()
         sensorManager.unregisterListener(this)
+        isListening = false
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

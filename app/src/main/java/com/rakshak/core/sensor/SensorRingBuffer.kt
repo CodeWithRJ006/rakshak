@@ -5,10 +5,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.ArrayDeque
 
-/**
- * Data class representing a single sensor reading.
- * Uses a cloned FloatArray to prevent mutation bugs from SensorEvent.
- */
 data class SensorData(
     val timestamp: Long,
     val values: FloatArray
@@ -30,25 +26,34 @@ data class SensorData(
 }
 
 /**
- * Thread-safe fixed-size ring buffer for sensor events.
+ * Thread-safe ring buffer for sensor events based on a rolling time window.
  * 
- * At SENSOR_DELAY_GAME (~50Hz), a 4-second buffer requires capacity = 200.
+ * @param timeWindowNanos The rolling time window to retain (e.g., 4 seconds in nanoseconds).
+ * @param maxCapacity An absolute maximum size to prevent memory bounds issues if sensors fire too rapidly.
  */
-class SensorRingBuffer(private val capacity: Int) {
-    private val buffer = ArrayDeque<SensorData>(capacity)
+class SensorRingBuffer(
+    private val timeWindowNanos: Long = 4_000_000_000L,
+    private val maxCapacity: Int = 1000
+) {
+    private val buffer = ArrayDeque<SensorData>(maxCapacity)
     
-    // We expose the buffer as a StateFlow so collectors get the latest snapshot immediately.
-    // Note: Emitting every single 20ms update to StateFlow might cause some backpressure/dropping
-    // if collectors are slow, but StateFlow correctly conflates updates.
     private val _flow = MutableStateFlow<List<SensorData>>(emptyList())
     val flow: StateFlow<List<SensorData>> = _flow.asStateFlow()
 
     @Synchronized
     fun add(timestamp: Long, values: FloatArray) {
-        if (buffer.size >= capacity) {
+        buffer.addLast(SensorData(timestamp, values.clone()))
+        
+        // Evict older samples outside the time window
+        while (buffer.isNotEmpty() && timestamp - buffer.first().timestamp > timeWindowNanos) {
             buffer.removeFirst()
         }
-        buffer.addLast(SensorData(timestamp, values.clone()))
+        
+        // Safety bound: prevent unbounded growth
+        while (buffer.size > maxCapacity) {
+            buffer.removeFirst()
+        }
+        
         // Emit the current snapshot
         _flow.value = buffer.toList()
     }
