@@ -47,12 +47,19 @@ class CrashDetector(
     fun processAccelerometerBuffer(buffer: List<SensorData>) {
         if (buffer.size < 2) return
 
-        val latestTimestamp = buffer.last().timestamp
+        var maxTimestamp = Long.MIN_VALUE
+        for (sample in buffer) {
+            if (sample.timestamp > maxTimestamp) {
+                maxTimestamp = sample.timestamp
+            }
+        }
+        val latestTimestamp = maxTimestamp
+
         if (latestTimestamp <= lastProcessedTimestamp) return
         lastProcessedTimestamp = latestTimestamp
 
         when (currentState) {
-            DetectorState.MONITORING -> evaluateMonitoring(buffer)
+            DetectorState.MONITORING -> evaluateMonitoring(buffer, latestTimestamp)
             DetectorState.IMPACT_CANDIDATE -> evaluateImpactCandidate(buffer, latestTimestamp)
             DetectorState.CONFIRMING -> evaluateConfirming(buffer, latestTimestamp)
             DetectorState.ALERTED -> {
@@ -63,7 +70,7 @@ class CrashDetector(
         }
     }
 
-    private fun evaluateMonitoring(buffer: List<SensorData>) {
+    private fun evaluateMonitoring(buffer: List<SensorData>, latestTimestamp: Long) {
         for (i in buffer.indices) {
             val sample = buffer[i]
             if (sample.timestamp <= lastMonitoredTimestamp) continue
@@ -73,7 +80,7 @@ class CrashDetector(
             val mag = getMagnitude(sample.values)
             if (mag >= config.accelMagnitudeThreshold) {
                 transitionTo(DetectorState.IMPACT_CANDIDATE, sample.timestamp)
-                evaluateImpactCandidate(buffer, sample.timestamp)
+                evaluateImpactCandidate(buffer, latestTimestamp)
                 return
             }
         }
@@ -88,6 +95,11 @@ class CrashDetector(
             
             if (curr.timestamp < stateEnterTimestamp) continue
             if (curr.timestamp <= prev.timestamp) continue
+
+            // A jerk discovered after candidate window expires must NOT confirm the candidate
+            if (curr.timestamp - stateEnterTimestamp > config.candidateTimeoutNanos) {
+                break
+            }
 
             val jerk = calculateJerk(curr, prev)
             if (jerk >= config.jerkThreshold) {
@@ -113,37 +125,57 @@ class CrashDetector(
             return
         }
 
-        var isResting = true
-        var prevTimestamp = latestTimestamp
+        var restingDuration = 0L
+        var prevTimestamp = Long.MAX_VALUE
+        var oldestValidRestingTimestamp = Long.MAX_VALUE
+        var newestValidRestingTimestamp = Long.MIN_VALUE
+        var isContinuousChain = true
 
         for (i in buffer.indices.reversed()) {
             val sample = buffer[i]
+            if (sample.timestamp <= stateEnterTimestamp) break
             
-            val timeToCheck = if (sample.timestamp <= stateEnterTimestamp) stateEnterTimestamp else sample.timestamp
+            if (prevTimestamp == Long.MAX_VALUE) {
+                prevTimestamp = sample.timestamp
+                newestValidRestingTimestamp = sample.timestamp
+                val mag = getMagnitude(sample.values)
+                if (mag > config.persistenceRestingThreshold) {
+                    isContinuousChain = false
+                    break
+                }
+                oldestValidRestingTimestamp = sample.timestamp
+                continue
+            }
             
-            val gap = prevTimestamp - timeToCheck
+            // reject/stop on duplicate timestamps or out-of-order timestamps
+            if (sample.timestamp >= prevTimestamp) {
+                isContinuousChain = false
+                break
+            }
+            
+            // reject/stop when the gap exceeds maxAcceptableGapNanos
+            val gap = prevTimestamp - sample.timestamp
             if (gap > config.maxAcceptableGapNanos) {
-                isResting = false
-                break
-            }
-            prevTimestamp = timeToCheck
-            
-            if (sample.timestamp <= stateEnterTimestamp) {
+                isContinuousChain = false
                 break
             }
             
-            if (sample.timestamp >= prevTimestamp && i != buffer.lastIndex) {
-                continue 
-            }
-
+            // reject/stop when a sample exceeds persistenceRestingThreshold
             val mag = getMagnitude(sample.values)
             if (mag > config.persistenceRestingThreshold) {
-                isResting = false
+                isContinuousChain = false
                 break
             }
+
+            prevTimestamp = sample.timestamp
+            oldestValidRestingTimestamp = sample.timestamp
         }
 
-        if (isResting && elapsedNanos >= config.persistenceWindowNanos) {
+        if (oldestValidRestingTimestamp != Long.MAX_VALUE && newestValidRestingTimestamp != Long.MIN_VALUE) {
+            restingDuration = newestValidRestingTimestamp - oldestValidRestingTimestamp
+        }
+
+        if (isContinuousChain && restingDuration >= config.persistenceWindowNanos) {
             transitionTo(DetectorState.CONFIRMED, latestTimestamp)
         }
     }
