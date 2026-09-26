@@ -8,6 +8,9 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.EditText
+import android.widget.Toast
+import com.rakshak.core.alert.TestContactConfig
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
@@ -76,7 +79,32 @@ class MainActivity : AppCompatActivity() {
 
         setupRecyclerView()
         setupModeSwitch()
+        setupTestControls()
         setupRefreshButton()
+        
+        // Start SensorService
+        val serviceIntent = android.content.Intent(this, com.rakshak.core.sensor.SensorService::class.java)
+        androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
+    }
+
+    private fun setupTestControls() {
+        val etTestContact = findViewById<android.widget.EditText>(R.id.et_test_contact)
+        val btnSimulateCrash = findViewById<android.view.View>(R.id.btn_simulate_crash)
+
+        etTestContact?.setText(com.rakshak.core.alert.TestContactConfig.testContactNumber)
+
+        btnSimulateCrash?.setOnClickListener {
+            val contact = etTestContact?.text?.toString()?.trim()
+            if (!contact.isNullOrEmpty()) {
+                com.rakshak.core.alert.TestContactConfig.testContactNumber = contact
+            }
+            
+            val intent = android.content.Intent(this, com.rakshak.core.sensor.SensorService::class.java).apply {
+                action = com.rakshak.core.sensor.SensorService.ACTION_SIMULATE_CRASH
+            }
+            androidx.core.content.ContextCompat.startForegroundService(this, intent)
+            android.widget.Toast.makeText(this, "Test Triggered", android.widget.Toast.LENGTH_SHORT).show()
+        }
         observeViewModel()
 
         // Request all permissions on first launch
@@ -117,6 +145,21 @@ class MainActivity : AppCompatActivity() {
     private fun observeViewModel() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.isServiceRunning.collect { running ->
+                        findViewById<android.widget.TextView>(R.id.tv_service_status)?.text = "Service: " + if(running) "Running" else "Stopped"
+                    }
+                }
+                launch {
+                    viewModel.detectorState.collect { state ->
+                        findViewById<android.widget.TextView>(R.id.tv_detector_state)?.text = "Detector: " + state.name
+                    }
+                }
+                launch {
+                    viewModel.lastAlertResult.collect { result ->
+                        findViewById<android.widget.TextView>(R.id.tv_last_alert)?.text = "Last Alert: " + (result?.name ?: "None")
+                    }
+                }
                 launch {
                     viewModel.readinessItems.collect { items ->
                         readinessAdapter.submitList(items)
@@ -282,3 +325,7 @@ private class ReadinessAdapter(
             old == new
     }
 }
+
+
+
+

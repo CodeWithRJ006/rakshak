@@ -8,7 +8,6 @@
     android:background="@color/bg_primary"
     tools:context=".ui.main.MainActivity">
 
-    <!-- ── App header ─────────────────────────────────────────────────── -->
     <TextView
         android:id="@+id/tv_title"
         android:layout_width="0dp"
@@ -38,7 +37,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tv_title" />
 
-    <!-- ── Mode row ───────────────────────────────────────────────────── -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/card_mode"
         android:layout_width="0dp"
@@ -93,7 +91,101 @@
         </androidx.constraintlayout.widget.ConstraintLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- ── Overall status banner ─────────────────────────────────────── -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/card_pipeline_status"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="12dp"
+        android:layout_marginTop="12dp"
+        app:cardBackgroundColor="@color/surface"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="2dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/card_mode">
+        
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+            
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="P0 Pipeline Status"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="8dp" />
+                
+            <TextView
+                android:id="@+id/tv_service_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Service: Stopped"
+                android:textColor="@color/text_secondary" />
+                
+            <TextView
+                android:id="@+id/tv_detector_state"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Detector: -"
+                android:textColor="@color/text_secondary" />
+                
+            <TextView
+                android:id="@+id/tv_last_alert"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Last Alert: None"
+                android:textColor="@color/text_secondary" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/card_test_controls"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="12dp"
+        app:cardBackgroundColor="@color/surface"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="2dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/card_pipeline_status">
+        
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+            
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Hackathon Testing"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="8dp" />
+                
+            <EditText
+                android:id="@+id/et_test_contact"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Test Contact Number"
+                android:inputType="phone"
+                android:layout_marginBottom="8dp" />
+                
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_simulate_crash"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Simulate Crash"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
     <TextView
         android:id="@+id/tv_overall_status"
         android:layout_width="0dp"
@@ -106,9 +198,8 @@
         android:textSize="14sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/card_mode" />
+        app:layout_constraintTop_toBottomOf="@id/card_test_controls" />
 
-    <!-- ── Readiness list ─────────────────────────────────────────────── -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_readiness"
         android:layout_width="0dp"
@@ -124,7 +215,6 @@
         app:layout_constraintTop_toBottomOf="@id/tv_overall_status"
         tools:listitem="@layout/item_readiness" />
 
-    <!-- ── Refresh button ─────────────────────────────────────────────── -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_refresh"
         android:layout_width="0dp"
@@ -137,3 +227,4 @@
         app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+

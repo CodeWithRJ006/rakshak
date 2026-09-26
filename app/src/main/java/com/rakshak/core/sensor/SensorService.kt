@@ -16,38 +16,69 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.rakshak.R
+import com.rakshak.core.alert.AndroidLocationController
+import com.rakshak.core.alert.AndroidSmsController
+import com.rakshak.core.alert.TestContactConfig
+import com.rakshak.core.alert.LocationController
+import com.rakshak.core.alert.SmsController
+import com.rakshak.core.detector.CrashDetector
+import com.rakshak.core.readiness.P0Pipeline
+import com.rakshak.core.readiness.P0PipelineStatus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
-/**
- * Foreground service that continuously reads Accelerometer and Gyroscope
- * at SENSOR_DELAY_GAME (~50Hz).
- * 
- * Target SDK 35 requires FOREGROUND_SERVICE_TYPE_SPECIAL_USE for custom 
- * long-running processes like continuous crash detection.
- */
 class SensorService : Service(), SensorEventListener {
 
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
     private var gyroscope: Sensor? = null
 
-    // 4 seconds rolling window (nanoseconds), max capacity 1000 items
     val accelerometerBuffer = SensorRingBuffer(timeWindowNanos = 4_000_000_000L, maxCapacity = 1000)
     val gyroscopeBuffer = SensorRingBuffer(timeWindowNanos = 4_000_000_000L, maxCapacity = 1000)
 
     private var isListening = false
+    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    private val detector = CrashDetector()
+    lateinit var smsController: SmsController
+    lateinit var locationController: LocationController
 
     override fun onCreate() {
         super.onCreate()
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+
+        if (!::smsController.isInitialized) smsController = AndroidSmsController(this)
+        if (!::locationController.isInitialized) locationController = AndroidLocationController(this)
+
+        P0PipelineStatus.updateServiceRunning(true)
+        P0PipelineStatus.updateDetectorState(detector.currentState)
+
+        serviceScope.launch {
+            accelerometerBuffer.flow.collect { buffer ->
+                if (buffer.isNotEmpty()) {
+                    detector.processAccelerometerBuffer(buffer)
+                }
+            }
+        }
+
+        val pipeline = P0Pipeline(detector, smsController, locationController) { listOf(TestContactConfig.testContactNumber) }
+        serviceScope.launch {
+            pipeline.collectStateFlow()
+        }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_SIMULATE_CRASH) {
+            detector.triggerExternalIncident(System.nanoTime())
+        }
         startForegroundSpecialUse()
         
         if (!isListening) {
-            // Handle missing sensors gracefully without crashing
             if (accelerometer != null) {
                 sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
             } else {
@@ -62,8 +93,6 @@ class SensorService : Service(), SensorEventListener {
             isListening = true
         }
 
-        // START_STICKY is intentional: crash detection is a continuous service. If killed by OS memory pressure, 
-        // it must be restarted automatically to ensure rider safety.
         return START_STICKY
     }
 
@@ -86,7 +115,7 @@ class SensorService : Service(), SensorEventListener {
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Rakshak Crash Detection")
             .setContentText("Monitoring sensors for safety...")
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // FALLBACK: using launcher icon for now
+            .setSmallIcon(R.drawable.ic_launcher_foreground) 
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
 
@@ -104,7 +133,6 @@ class SensorService : Service(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent?) {
         if (event == null) return
         
-        // event.timestamp is in nanoseconds
         when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
                 accelerometerBuffer.add(event.timestamp, event.values)
@@ -115,14 +143,14 @@ class SensorService : Service(), SensorEventListener {
         }
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // No-op for crash detection
-    }
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     override fun onDestroy() {
         super.onDestroy()
         sensorManager.unregisterListener(this)
         isListening = false
+        serviceScope.cancel()
+        P0PipelineStatus.updateServiceRunning(false)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -130,5 +158,7 @@ class SensorService : Service(), SensorEventListener {
     companion object {
         private const val TAG = "SensorService"
         private const val NOTIFICATION_ID = 1001
+        const val ACTION_SIMULATE_CRASH = "com.rakshak.action.SIMULATE_CRASH"
     }
 }
+

@@ -60,6 +60,7 @@ android {
 }
 
 dependencies {
+    implementation("com.google.android.gms:play-services-location:21.2.0")
     // AndroidX core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.ktx)
@@ -77,9 +78,12 @@ dependencies {
     // Unit Tests
     testImplementation(libs.robolectric)
     testImplementation(libs.junit)
+    testImplementation("org.mockito:mockito-core:5.11.0")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
     testImplementation(libs.kotlinx.coroutines.test)
 
     // Instrumented Tests
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }
+
