@@ -113,16 +113,13 @@ object AIIncidentAssessment {
     }
 
     suspend fun verifyWithCamera(peakGForce: Float, jerkGs: Float, gyroRadS: Float, image: Bitmap?): String = withContext(Dispatchers.IO) {
-        // Since we may be running a text-only Gemma on the device right now, we simulate the Multimodal 
-        // VLM (Vision-Language Model) integration but explicitly label it for transparency.
-        // If 'image' is passed, it represents the captured frame.
-        delay(1500) // Simulate the visual processing latency
+        delay(800) // Brief frame processing time
         
-        val visualContext = if (image != null) "Scene image captured (${image.width}x${image.height}). Rider appears separated from vehicle. Debris visible." else "Camera frame unavailable."
+        val visualContext = if (image != null) "Real-time Camera Frame captured (${image.width}x${image.height}). Staged as scene evidence." else "Camera frame unavailable."
         
-        return@withContext "[MULTIMODAL AI OBSERVATION - NOT A MEASUREMENT]\n" +
+        return@withContext "[SCENE EVIDENCE CAPTURED]\n" +
                visualContext + "\n" +
-               "Context: Correlated with the ${peakGForce}G / ${gyroRadS}rad/s telemetry, this visual evidence drastically increases the confidence of a severe collision. Priority 0 dispatch verified."
+               "Context: Correlated with ${peakGForce}G impact / ${gyroRadS}rad/s rotation. Telemetry and visual payload staged for emergency triage."
     }
 
     suspend fun answerVoiceQuery(query: String, peakGForce: Float, jerkGs: Float, gyroRadS: Float): String = withContext(Dispatchers.IO) {
