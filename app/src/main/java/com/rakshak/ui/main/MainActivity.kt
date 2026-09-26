@@ -1,402 +1,273 @@
 package com.rakshak.ui.main
 
 import android.Manifest
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
-import android.view.animation.AlphaAnimation
-import android.view.animation.Animation
-import android.view.animation.DecelerateInterpolator
-import android.view.animation.TranslateAnimation
-import android.widget.ScrollView
-import android.view.LayoutInflater
-import android.view.ViewGroup
-import android.widget.TextView
-import android.widget.EditText
-import android.widget.Toast
-import com.rakshak.core.alert.TestContactConfig
+import android.content.Intent
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
-import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.ListAdapter
-import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.chip.Chip
-import com.google.android.material.switchmaterial.SwitchMaterial
-import com.rakshak.R
 import com.rakshak.core.mode.AppMode
-import com.rakshak.core.readiness.ReadinessState
-import com.rakshak.core.readiness.ReadinessStatus
-import com.rakshak.databinding.ActivityMainBinding
-import kotlinx.coroutines.launch
+import com.rakshak.core.sensor.SensorService
+import kotlinx.coroutines.delay
 
-/**
- * MainActivity — "System Readiness" screen.
- *
- * Shows:
- *  - Live status of 6 P0 components (checkmark / warning + [FIX] button)
- *  - Global DEMO ↔ REAL mode toggle switch
- *  - A Refresh button for manual re-check
- *
- * Architecture: purely observes [MainViewModel]. All logic lives in the ViewModel
- * or below. This Activity contains ZERO business logic.
- */
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
-    private lateinit var binding: ActivityMainBinding
     private val viewModel: MainViewModel by viewModels()
 
-    // Adapter for the readiness RecyclerView
-    private val readinessAdapter = ReadinessAdapter { status ->
-        onFixRequested(status)
-    }
+    private val ALL_PERMISSIONS = arrayOf(
+        Manifest.permission.SEND_SMS,
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    )
 
-    // Permission launcher — requests all P0+P1 permissions at once on first launch
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        val denied = results.filterValues { !it }.keys
-        if (denied.isNotEmpty()) {
-            showPermissionRationale(denied)
-        }
-        viewModel.refresh()
-    }
-
-    // Single-permission launcher used by the [FIX] button
-    private val fixPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
     ) {
         viewModel.refresh()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        setupRecyclerView()
-        setupModeSwitch()
-        setupTestControls()
-        setupRefreshButton()
-        setupLiveLogs()
         
-        // Staggered entry animation for a premium feel
-        animateEntry()
-        
-        // Start SensorService
-        val serviceIntent = android.content.Intent(this, com.rakshak.core.sensor.SensorService::class.java)
-        androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
-    }
-
-    private fun animateEntry() {
-        val root = binding.root
-        for (i in 0 until root.childCount) {
-            val child = root.getChildAt(i)
-            val slideIn = TranslateAnimation(0f, 0f, 100f, 0f).apply {
-                duration = 600
-                startOffset = (i * 70).toLong()
-                interpolator = DecelerateInterpolator()
-            }
-            val fadeIn = AlphaAnimation(0f, 1f).apply {
-                duration = 600
-                startOffset = (i * 70).toLong()
-            }
-            val set = android.view.animation.AnimationSet(true).apply {
-                addAnimation(slideIn)
-                addAnimation(fadeIn)
-            }
-            child.startAnimation(set)
-        }
-    }
-
-    private fun setupLiveLogs() {
-        val tvLogs = findViewById<android.widget.TextView>(R.id.tv_live_logs)
-        val svLogs = findViewById<android.widget.ScrollView>(R.id.sv_logs)
-        
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                com.rakshak.core.log.SystemEventLogger.logs.collect { logMsg ->
-                    val currentText = tvLogs.text.toString()
-                    // Keep last 100 lines to avoid memory bloat
-                    val lines = currentText.split("\n").takeLast(99)
-                    val newText = (lines + logMsg).joinToString("\n")
-                    tvLogs.text = newText
-                    svLogs.post { svLogs.smoothScrollTo(0, tvLogs.bottom) }
-                }
-            }
-        }
-    }
-
-    private fun setupTestControls() {
-        val etTestContact = findViewById<android.widget.EditText>(R.id.et_test_contact)
-                val btnSimulateCrash = findViewById<android.view.View>(R.id.btn_simulate_crash)
-        val btnInjectTrace = findViewById<android.view.View>(R.id.btn_inject_trace)
-
-        etTestContact?.setText(com.rakshak.core.alert.TestContactConfig.testContactNumber)
-
-        btnSimulateCrash?.setOnClickListener {
-            val contact = etTestContact?.text?.toString()?.trim()
-            if (!contact.isNullOrEmpty()) {
-                com.rakshak.core.alert.TestContactConfig.testContactNumber = contact
-            }
-            
-            com.rakshak.core.log.SystemEventLogger.log("UI", "MANUAL CRASH TRIGGERED")
-            
-            val intent = android.content.Intent(this, com.rakshak.core.sensor.SensorService::class.java).apply {
-                action = com.rakshak.core.sensor.SensorService.ACTION_SIMULATE_CRASH
-            }
-            androidx.core.content.ContextCompat.startForegroundService(this, intent)
-        }
-        
-        btnInjectTrace?.setOnClickListener {
-            com.rakshak.core.log.SystemEventLogger.log("UI", "INJECTING SYNTHETIC HIGH-G SENSOR TRACE...")
-            val intent = android.content.Intent(this, com.rakshak.core.sensor.SensorService::class.java).apply {
-                action = com.rakshak.core.sensor.SensorService.ACTION_INJECT_TRACE
-            }
-            androidx.core.content.ContextCompat.startForegroundService(this, intent)
-        }
-        observeViewModel()
-
-        // Request all permissions on first launch
-        requestAllPermissions()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Refresh when returning from Settings (user may have granted permissions)
-        viewModel.refresh()
-    }
-
-    // ── Setup ────────────────────────────────────────────────────────────────
-
-    private fun setupRecyclerView() {
-        binding.rvReadiness.apply {
-            layoutManager = LinearLayoutManager(this@MainActivity)
-            adapter = readinessAdapter
-        }
-    }
-
-    private fun setupModeSwitch() {
-        binding.switchMode.setOnCheckedChangeListener { _, isChecked ->
-            val newMode = if (isChecked) AppMode.REAL else AppMode.DEMO
-            viewModel.setMode(newMode)
-            updateModeBanner(newMode)
-        }
-    }
-
-    private fun setupRefreshButton() {
-        binding.btnRefresh.setOnClickListener {
-            viewModel.refresh()
-        }
-    }
-
-    // ── Observation ──────────────────────────────────────────────────────────
-
-    private fun observeViewModel() {
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    viewModel.isServiceRunning.collect { running ->
-                        findViewById<android.widget.TextView>(R.id.tv_service_status)?.text = "Service: " + if(running) "Running" else "Stopped"
-                        
-                        val indicator = findViewById<android.view.View>(R.id.indicator_status)
-                        if (running) {
-                            val pulse = AlphaAnimation(0.3f, 1.0f).apply {
-                                duration = 800
-                                repeatMode = Animation.REVERSE
-                                repeatCount = Animation.INFINITE
-                            }
-                            indicator?.startAnimation(pulse)
-                        } else {
-                            indicator?.clearAnimation()
-                        }
-                    }
-                }
-                launch {
-                    viewModel.detectorState.collect { state ->
-                        findViewById<android.widget.TextView>(R.id.tv_detector_state)?.text = "Detector: " + state.name
-                    }
-                }
-                launch {
-                    viewModel.lastAlertResult.collect { result ->
-                        findViewById<android.widget.TextView>(R.id.tv_last_alert)?.text = "Last Alert: " + (result?.name ?: "None")
-                    }
-                }
-                launch {
-                    viewModel.readinessItems.collect { items ->
-                        readinessAdapter.submitList(items)
-                        updateOverallStatus(items)
-                    }
-                }
-                launch {
-                    viewModel.currentMode.collect { mode ->
-                        binding.switchMode.isChecked = mode is AppMode.REAL
-                        updateModeBanner(mode)
-                    }
-                }
-            }
-        }
-    }
-
-    // ── UI helpers ───────────────────────────────────────────────────────────
-
-    private fun updateModeBanner(mode: AppMode) {
-        when (mode) {
-            is AppMode.DEMO -> {
-                binding.chipMode.text = getString(R.string.mode_demo)
-                binding.chipMode.setChipBackgroundColorResource(R.color.mode_demo_bg)
-            }
-            is AppMode.REAL -> {
-                binding.chipMode.text = getString(R.string.mode_real)
-                binding.chipMode.setChipBackgroundColorResource(R.color.mode_real_bg)
-            }
-        }
-    }
-
-    private fun updateOverallStatus(items: List<ReadinessStatus>) {
-        val allOk = items.isNotEmpty() && items.all { it.state == ReadinessState.OK }
-        binding.tvOverallStatus.text = if (allOk) {
-            getString(R.string.status_all_systems_ready)
-        } else {
-            getString(R.string.status_action_required)
-        }
-        binding.tvOverallStatus.setTextColor(
-            ContextCompat.getColor(
-                this,
-                if (allOk) R.color.status_ok else R.color.status_warning
-            )
-        )
-    }
-
-    // ── Permission handling ───────────────────────────────────────────────────
-
-    private fun requestAllPermissions() {
         permissionLauncher.launch(ALL_PERMISSIONS)
-    }
+        
+        val serviceIntent = Intent(this, SensorService::class.java)
+        ContextCompat.startForegroundService(this, serviceIntent)
 
-    private fun onFixRequested(status: ReadinessStatus) {
-        val permission = PERMISSION_MAP[status.id]
-        if (permission != null) {
-            fixPermissionLauncher.launch(permission)
-        } else {
-            // Non-permission fix — open app settings
-            openAppSettings()
+        setContent {
+            RakshakTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = Color(0xFF0F1117)
+                ) {
+                    HomeScreen(viewModel)
+                }
+            }
         }
     }
+}
 
-    private fun showPermissionRationale(denied: Set<String>) {
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.permission_rationale_title))
-            .setMessage(getString(R.string.permission_rationale_message))
-            .setPositiveButton(getString(R.string.open_settings)) { _, _ -> openAppSettings() }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+@Composable
+fun RakshakTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            background = Color(0xFF0F1117),
+            surface = Color(0xFF1C1F2A),
+            primary = Color(0xFFD32F2F),
+            secondary = Color(0xFF9AA0B0),
+            tertiary = Color(0xFF4CAF50)
+        ),
+        content = content
+    )
+}
+
+@Composable
+fun HomeScreen(viewModel: MainViewModel) {
+    val scrollState = rememberScrollState()
+    var isVisible by remember { mutableStateOf(false) }
+    
+    val aiState by viewModel.aiState.collectAsState()
+    val aiResultText by viewModel.aiResultText.collectAsState()
+    val isModelLoaded by viewModel.isModelLoaded.collectAsState()
+    val detectorState by viewModel.detectorState.collectAsState()
+    val isServiceRunning by viewModel.isServiceRunning.collectAsState()
+
+    LaunchedEffect(Unit) {
+        delay(100)
+        isVisible = true
     }
 
-    private fun openAppSettings() {
-        startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", packageName, null)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Header
+        AnimatedVisibility(
+            visible = isVisible,
+            enter = fadeIn(tween(600)) + slideInVertically(initialOffsetY = { 50 }, animationSpec = tween(600))
+        ) {
+            Column {
+                Text(
+                    text = "RAKSHAK",
+                    color = Color.White,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 2.sp
+                )
+                Text(
+                    text = "AI SAFETY COPILOT",
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.sp
+                )
             }
-        )
+        }
+
+        // Status Badge Row
+        AnimatedVisibility(
+            visible = isVisible,
+            enter = fadeIn(tween(600, delayMillis = 100)) + slideInVertically(initialOffsetY = { 50 }, animationSpec = tween(600, delayMillis = 100))
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatusBadge(
+                    text = if (isModelLoaded) "ON-DEVICE AI · Gemma · READY" else "ON-DEVICE AI · LOADING...",
+                    color = if (isModelLoaded) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                )
+                StatusBadge(
+                    text = if (isServiceRunning) "TELEMETRY · ACTIVE" else "TELEMETRY · OFFLINE",
+                    color = if (isServiceRunning) Color(0xFF4CAF50) else Color(0xFFD32F2F)
+                )
+            }
+        }
+
+        // Hero AI Card
+        AnimatedVisibility(
+            visible = isVisible,
+            enter = fadeIn(tween(600, delayMillis = 200)) + slideInVertically(initialOffsetY = { 50 }, animationSpec = tween(600, delayMillis = 200))
+        ) {
+            AiCopilotCard(aiState, aiResultText, detectorState.name)
+        }
+
+        // Test Controls
+        AnimatedVisibility(
+            visible = isVisible,
+            enter = fadeIn(tween(600, delayMillis = 300)) + slideInVertically(initialOffsetY = { 50 }, animationSpec = tween(600, delayMillis = 300))
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(16.dp))
+            ) {
+                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = { viewModel.triggerSimulatedCrash() },
+                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("💥 TEST INCIDENT (FRONTAL)", fontWeight = FontWeight.Bold)
+                    }
+                    
+                    OutlinedButton(
+                        onClick = { viewModel.triggerInjectTrace() },
+                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFFF9800)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF9800))
+                    ) {
+                        Text("⚡ TEST INCIDENT (EJECTION)", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
+}
 
-    // ── Constants ────────────────────────────────────────────────────────────
-
-    companion object {
-        private val ALL_PERMISSIONS = arrayOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
-        )
-
-        private val PERMISSION_MAP = mapOf(
-            "location_permission" to Manifest.permission.ACCESS_FINE_LOCATION,
-            "sms_permission" to Manifest.permission.SEND_SMS,
+@Composable
+fun StatusBadge(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .background(color.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+            .border(1.dp, color.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = text,
+            color = color,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
         )
     }
 }
 
-// ── RecyclerView Adapter ─────────────────────────────────────────────────────
-
-/**
- * ReadinessAdapter — displays each [ReadinessStatus] as a row with:
- *  - An icon (✓ or ⚠)
- *  - Label text
- *  - Detail text (optional)
- *  - [FIX] button (shown only when [ReadinessStatus.isFixable] is true)
- */
-private class ReadinessAdapter(
-    private val onFixClick: (ReadinessStatus) -> Unit,
-) : ListAdapter<ReadinessStatus, ReadinessAdapter.ViewHolder>(DiffCallback) {
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_readiness, parent, false)
-        return ViewHolder(view as ViewGroup, onFixClick)
-    }
-
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        holder.bind(getItem(position))
-    }
-
-    class ViewHolder(
-        private val root: ViewGroup,
-        private val onFixClick: (ReadinessStatus) -> Unit,
-    ) : RecyclerView.ViewHolder(root) {
-
-        private val tvLabel: TextView = root.findViewById(R.id.tv_label)
-        private val tvDetail: TextView = root.findViewById(R.id.tv_detail)
-        private val tvIcon: TextView = root.findViewById(R.id.tv_icon)
-        private val btnFix: MaterialButton = root.findViewById(R.id.btn_fix)
-
-        fun bind(status: ReadinessStatus) {
-            tvLabel.text = status.label
-            tvDetail.text = status.detail
-            tvDetail.visibility = if (status.detail.isBlank()) android.view.View.GONE
-                                   else android.view.View.VISIBLE
-
-            when (status.state) {
-                ReadinessState.OK -> {
-                    tvIcon.text = "✓"
-                    tvIcon.setTextColor(ContextCompat.getColor(root.context, R.color.status_ok))
-                }
-                ReadinessState.WARNING -> {
-                    tvIcon.text = "⚠"
-                    tvIcon.setTextColor(ContextCompat.getColor(root.context, R.color.status_warning))
-                }
-                ReadinessState.CHECKING -> {
-                    tvIcon.text = "…"
-                    tvIcon.setTextColor(ContextCompat.getColor(root.context, R.color.status_checking))
-                }
+@Composable
+fun AiCopilotCard(aiState: AiState, aiResultText: String, detectorState: String) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Animated pulse dot
+                val infiniteTransition = rememberInfiniteTransition()
+                val alpha by infiniteTransition.animateFloat(
+                    initialValue = 0.3f,
+                    targetValue = 1.0f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(if (aiState == AiState.ANALYZING) 300 else 1000, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ), label = "pulse"
+                )
+                
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(if (aiState == AiState.ANALYZING) Color(0xFFFF9800).copy(alpha = alpha) else Color(0xFF4CAF50).copy(alpha = alpha))
+                )
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                Text(
+                    text = "AI COPILOT STATUS: ${if(aiState == AiState.ANALYZING) "ANALYZING..." else "IDLE"}",
+                    color = if (aiState == AiState.ANALYZING) Color(0xFFFF9800) else Color(0xFF4CAF50),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp
+                )
             }
-
-            btnFix.visibility = if (status.isFixable) android.view.View.VISIBLE
-                                 else android.view.View.GONE
-            btnFix.setOnClickListener { onFixClick(status) }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black, RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0x3300FF00), RoundedCornerShape(8.dp))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    text = when(aiState) {
+                        AiState.IDLE -> "> SYSTEM READY.\n> WAITING FOR TELEMETRY ANOMALIES...\n> CURRENT STATE: $detectorState"
+                        AiState.ANALYZING -> "> INGESTING HIGH-G TELEMETRY...\n> EXTRACTING JERK & GYRO CORROBORATION...\n> RUNNING ON-DEVICE INFERENCE..."
+                        AiState.READY -> aiResultText
+                        AiState.FAILED -> "> INFERENCE FAILED. FALLBACK TO DETERMINISTIC MODEL."
+                    },
+                    color = Color(0xFF00FF00),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+            }
         }
     }
-
-    private object DiffCallback : DiffUtil.ItemCallback<ReadinessStatus>() {
-        override fun areItemsTheSame(old: ReadinessStatus, new: ReadinessStatus) =
-            old.id == new.id
-
-        override fun areContentsTheSame(old: ReadinessStatus, new: ReadinessStatus) =
-            old == new
-    }
 }
-
-
-
-
-
