@@ -23,34 +23,14 @@ interface SecretKeyProvider {
     fun getSecurityLevel(): String
 }
 
-    // Hackathon dummy key. In production, securely derive or store in Keystore.
-    private val secretKey = "RAKSHAK_HMAC_SECRET".toByteArray()
+class AndroidKeystoreProvider : SecretKeyProvider {
+    private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
-    suspend fun logIncident(incidentData: String) = withContext(Dispatchers.IO) {
-        try {
-            val checker = IncidentLogIntegrityChecker(context)
-            val logDir = checker.getLogDirectory()
-            if (!logDir.exists()) logDir.mkdirs()
-
-            val logFile = File(logDir, IncidentLogIntegrityChecker.LOG_FILE_NAME)
-            
-            // Format: TIMESTAMP | DATA | HMAC
-            val timestamp = System.currentTimeMillis()
-            val payload = "$timestamp|$incidentData"
-            
-            val mac = Mac.getInstance("HmacSHA256")
-            val secretKeySpec = SecretKeySpec(secretKey, "HmacSHA256")
-            mac.init(secretKeySpec)
-            
-            val hmacBytes = mac.doFinal(payload.toByteArray(Charsets.UTF_8))
-            val hmacHex = hmacBytes.joinToString("") { "%02x".format(it) }
-            
-            val entry = "$payload|$hmacHex\n"
-            
-            logFile.appendText(entry, Charsets.UTF_8)
-            Log.d("HMACLogger", "Incident logged securely: $payload")
-            SystemEventLogger.log("HMAC", "Integrity Hash Gen: $hmacHex")
-            SystemEventLogger.log("HMAC", "Chain updated in secure vault.")
+    override fun getSecurityLevel(): String {
+        return try {
+            val key = getOrCreateKey()
+            val factory = SecretKeyFactory.getInstance(key.algorithm, "AndroidKeyStore")
+            val keyInfo = factory.getKeySpec(key, KeyInfo::class.java) as KeyInfo
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 when (keyInfo.securityLevel) {
@@ -198,6 +178,8 @@ class HMACIncidentLogger(
             
             database.insert(timestamp, payloadJson, previousMac, hmacHex)
             Log.d(TAG, "Incident logged securely to SQLite")
+            SystemEventLogger.log("HMAC", "Integrity Hash Gen: $hmacHex")
+            SystemEventLogger.log("HMAC", "Chain updated in secure vault.")
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to log incident: $e")
@@ -245,4 +227,3 @@ class HMACIncidentLogger(
         private const val TAG = "HMACLogger"
     }
 }
-

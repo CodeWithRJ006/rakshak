@@ -124,7 +124,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun triggerInjectTrace() {
         val intent = Intent(getApplication(), SensorService::class.java).apply {
-            action = SensorService.ACTION_INJECT_TRACE
+            action = SensorService.ACTION_INJECT_TRACE_EJECTION
         }
         ContextCompat.startForegroundService(getApplication(), intent)
 

@@ -8,7 +8,6 @@ import com.rakshak.core.detector.CrashDetector
 import com.rakshak.core.detector.DetectorState
 import com.rakshak.core.mode.AppMode
 import com.rakshak.core.mode.ModeManager
-import com.rakshak.core.summary.IncidentData
 import com.rakshak.core.summary.SummaryGenerator
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +34,6 @@ class P0Pipeline(
         private set
         
     private val pipelineScope = CoroutineScope(Dispatchers.Default)
-    private val summaryGenerator = SummaryGenerator(null) // No model for now, deterministic
         
     suspend fun collectStateFlow() {
         detector.stateFlow.collectLatest { state ->
@@ -59,20 +57,24 @@ class P0Pipeline(
                     val locationData = locationDeferred.await()
                     val locString = if (locationData != null) "${locationData.latitude}, ${locationData.longitude}" else "Unknown"
 
-                    val incidentData = IncidentData(
-                        timestamp = System.currentTimeMillis(),
+                    val timestamp = System.currentTimeMillis()
+                    val alertStatus = result.name
+                    val movementResult = "POST_CRASH_STILLNESS" // Simulating movement result
+                    
+                    val summary = SummaryGenerator.generateSummary(
+                        peakGs = 12.5f,
+                        jerkGs = 850f,
+                        gyroRads = 12.0f,
                         location = locString,
-                        alertStatus = result.name,
-                        movementResult = "POST_CRASH_STILLNESS" // Simulating movement result
+                        alertStatus = alertStatus,
+                        movementResult = movementResult
                     )
                     
-                    val summary = summaryGenerator.generateSummary(incidentData)
-                    
                     val jsonObj = JSONObject()
-                    jsonObj.put("timestamp", incidentData.timestamp)
-                    jsonObj.put("location", incidentData.location)
-                    jsonObj.put("alertStatus", incidentData.alertStatus)
-                    jsonObj.put("movementResult", incidentData.movementResult)
+                    jsonObj.put("timestamp", timestamp)
+                    jsonObj.put("location", locString)
+                    jsonObj.put("alertStatus", alertStatus)
+                    jsonObj.put("movementResult", movementResult)
                     jsonObj.put("summary", summary)
                     
                     var chainIntegrity = "UNKNOWN"
@@ -89,8 +91,8 @@ class P0Pipeline(
 
                     // POST to embedded server (laptop dashboard)
                     try {
-                        // 10.0.2.2 is local host for android emulator, for real device change to local IP
-                        val url = URL("http://10.0.2.2:3001/api/incident") 
+                        // Using your laptop's local IP for the loaner phone
+                        val url = URL("http://192.168.1.100:3001/api/incident") 
                         val conn = url.openConnection() as HttpURLConnection
                         conn.requestMethod = "POST"
                         conn.setRequestProperty("Content-Type", "application/json")
@@ -116,4 +118,3 @@ class P0Pipeline(
         }
     }
 }
-
