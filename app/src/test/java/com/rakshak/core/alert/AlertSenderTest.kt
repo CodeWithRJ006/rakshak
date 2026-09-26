@@ -25,13 +25,10 @@ class AlertSenderTest {
 
     class MockLocationController(val delayMillis: Long = 0, val returnLocation: Boolean = true) : LocationController {
         var callCount = 0
-        override suspend fun getLocation(timeoutMillis: Long): LocationData? {
+        override suspend fun getLocation(): LocationData? {
             callCount++
             if (delayMillis > 0) {
                 delay(delayMillis)
-            }
-            if (delayMillis > timeoutMillis) {
-                return null // Simulate timeout within the caller/controller logic
             }
             return if (returnLocation) LocationData(37.422, -122.084) else null
         }
@@ -66,19 +63,26 @@ class AlertSenderTest {
     }
 
     @Test
-    fun testMissingPermissionFailsGracefully() = runBlocking {
+    fun testDemoModeWithPermissionDeniedStillReturnsAlertSent() = runBlocking {
         val sms = MockSmsController().apply { permission = false }
         val loc = MockLocationController()
         
-        // Real mode
+        // Demo mode ignores the missing permission
+        val senderDemo = AlertSender(AlertMode.DEMO_MODE, sms, loc, listOf("1234567890"))
+        assertEquals(AlertResult.ALERT_SENT, senderDemo.sendEmergencyAlert())
+        assertEquals(1, senderDemo.demoLogs.size)
+        assertEquals("SOS! A crash has been detected. Location: 37.422, -122.084", senderDemo.demoLogs[0].messageBody)
+    }
+
+    @Test
+    fun testRealModeMissingPermissionFailsGracefully() = runBlocking {
+        val sms = MockSmsController().apply { permission = false }
+        val loc = MockLocationController()
+        
+        // Real mode fails
         val senderReal = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"))
         assertEquals(AlertResult.ALERT_FAILED_NO_PERMISSION, senderReal.sendEmergencyAlert())
         assertEquals(0, sms.sendCount)
-
-        // Demo mode
-        val senderDemo = AlertSender(AlertMode.DEMO_MODE, sms, loc, listOf("1234567890"))
-        assertEquals(AlertResult.ALERT_FAILED_NO_PERMISSION, senderDemo.sendEmergencyAlert())
-        assertEquals(1, senderDemo.demoLogs.size)
     }
 
     @Test
@@ -120,9 +124,9 @@ class AlertSenderTest {
     fun testGpsTimeoutDoesNotBlockIndefinitely() = runBlocking {
         val sms = MockSmsController()
         // Delay is longer than timeout
-        val loc = MockLocationController(delayMillis = 2000L)
-        // Set a short timeout 1 second
-        val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"), locationTimeoutMillis = 1000L)
+        val loc = MockLocationController(delayMillis = 5000L)
+        // Set a short timeout 500ms
+        val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"), locationTimeoutMillis = 500L)
 
         val startTime = System.currentTimeMillis()
         val result = sender.sendEmergencyAlert()
@@ -132,8 +136,30 @@ class AlertSenderTest {
         assertEquals(AlertResult.ALERT_SENT, result)
         assertEquals(1, sms.sendCount)
         assertEquals("SOS! A crash has been detected. Location unavailable", sms.messagesSent[0])
-        // It shouldn't have waited the full 2000ms delay if our framework properly cancels, 
-        // but since we simulate it internally via delayMillis > timeout, it returns null early.
-        assertTrue(duration < 3000L) 
+        
+        // Ensure it broke out via withTimeoutOrNull near 500ms (allow some padding)
+        assertTrue("Duration was " + duration, duration < 2000L)
+    }
+
+    @Test
+    fun testMultipleEmergencyContactsBehaveCorrectly() = runBlocking {
+        val sms = MockSmsController()
+        val loc = MockLocationController(returnLocation = false)
+        val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("111", "222", "333"))
+
+        val result = sender.sendEmergencyAlert()
+        assertEquals(AlertResult.ALERT_SENT, result)
+        assertEquals(3, sms.sendCount)
+    }
+
+    @Test
+    fun testEmptyEmergencyContactsIsHandledSafely() = runBlocking {
+        val sms = MockSmsController()
+        val loc = MockLocationController()
+        val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, emptyList())
+
+        val result = sender.sendEmergencyAlert()
+        assertEquals(AlertResult.ALERT_FAILED_NO_CONTACTS, result)
+        assertEquals(0, sms.sendCount)
     }
 }

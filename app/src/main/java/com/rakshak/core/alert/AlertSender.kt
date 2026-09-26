@@ -1,5 +1,7 @@
 package com.rakshak.core.alert
 
+import kotlinx.coroutines.withTimeoutOrNull
+
 enum class AlertMode {
     REAL_MODE,
     DEMO_MODE
@@ -9,6 +11,7 @@ enum class AlertResult {
     ALERT_SENT,
     ALERT_FAILED_NO_PERMISSION,
     ALERT_FAILED_NO_SERVICE,
+    ALERT_FAILED_NO_CONTACTS,
     ALERT_FAILED_UNKNOWN
 }
 
@@ -21,7 +24,8 @@ interface SmsController {
 }
 
 interface LocationController {
-    suspend fun getLocation(timeoutMillis: Long): LocationData?
+    // The controller itself should try to be fast, but we wrap it in withTimeoutOrNull anyway
+    suspend fun getLocation(): LocationData?
 }
 
 class AlertSender(
@@ -29,7 +33,7 @@ class AlertSender(
     private val smsController: SmsController,
     private val locationController: LocationController,
     private val emergencyContacts: List<String>,
-    private val locationTimeoutMillis: Long = 5000L
+    private val locationTimeoutMillis: Long = 3000L
 ) {
     val demoLogs = mutableListOf<DemoLog>()
 
@@ -41,18 +45,28 @@ class AlertSender(
     )
 
     suspend fun sendEmergencyAlert(): AlertResult {
-        if (!smsController.hasPermission()) {
-            if (mode == AlertMode.DEMO_MODE) {
-                logDemo(AlertResult.ALERT_FAILED_NO_PERMISSION, "unknown", "")
+        if (emergencyContacts.isEmpty()) {
+            return AlertResult.ALERT_FAILED_NO_CONTACTS
+        }
+
+        if (mode == AlertMode.REAL_MODE) {
+            if (!smsController.hasPermission()) {
+                return AlertResult.ALERT_FAILED_NO_PERMISSION
             }
-            return AlertResult.ALERT_FAILED_NO_PERMISSION
+            if (!smsController.hasService()) {
+                return AlertResult.ALERT_FAILED_NO_SERVICE
+            }
         }
 
-        if (mode == AlertMode.REAL_MODE && !smsController.hasService()) {
-            return AlertResult.ALERT_FAILED_NO_SERVICE
+        // Bounded wait for location. SMS is higher priority, so we do not wait indefinitely.
+        val location = try {
+            withTimeoutOrNull(locationTimeoutMillis) {
+                locationController.getLocation()
+            }
+        } catch (e: Exception) {
+            null
         }
-
-        val location = locationController.getLocation(locationTimeoutMillis)
+        
         val locationStatus = if (location != null) "available" else "unavailable"
         
         val locationText = if (location != null) {
