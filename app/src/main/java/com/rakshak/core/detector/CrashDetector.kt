@@ -78,6 +78,8 @@ class CrashDetector(
             lastMonitoredTimestamp = sample.timestamp
             
             val mag = getMagnitude(sample.values)
+            if (mag.isNaN()) continue
+            
             if (mag >= config.accelMagnitudeThreshold) {
                 transitionTo(DetectorState.IMPACT_CANDIDATE, sample.timestamp)
                 evaluateImpactCandidate(buffer, latestTimestamp)
@@ -96,12 +98,13 @@ class CrashDetector(
             if (curr.timestamp < stateEnterTimestamp) continue
             if (curr.timestamp <= prev.timestamp) continue
 
-            // A jerk discovered after candidate window expires must NOT confirm the candidate
             if (curr.timestamp - stateEnterTimestamp > config.candidateTimeoutNanos) {
                 break
             }
 
             val jerk = calculateJerk(curr, prev)
+            if (jerk.isNaN()) continue
+            
             if (jerk >= config.jerkThreshold) {
                 transitionTo(DetectorState.CONFIRMING, curr.timestamp)
                 return
@@ -139,7 +142,7 @@ class CrashDetector(
                 prevTimestamp = sample.timestamp
                 newestValidRestingTimestamp = sample.timestamp
                 val mag = getMagnitude(sample.values)
-                if (mag > config.persistenceRestingThreshold) {
+                if (mag.isNaN() || mag > config.persistenceRestingThreshold) {
                     isContinuousChain = false
                     break
                 }
@@ -147,22 +150,19 @@ class CrashDetector(
                 continue
             }
             
-            // reject/stop on duplicate timestamps or out-of-order timestamps
             if (sample.timestamp >= prevTimestamp) {
                 isContinuousChain = false
                 break
             }
             
-            // reject/stop when the gap exceeds maxAcceptableGapNanos
             val gap = prevTimestamp - sample.timestamp
             if (gap > config.maxAcceptableGapNanos) {
                 isContinuousChain = false
                 break
             }
             
-            // reject/stop when a sample exceeds persistenceRestingThreshold
             val mag = getMagnitude(sample.values)
-            if (mag > config.persistenceRestingThreshold) {
+            if (mag.isNaN() || mag > config.persistenceRestingThreshold) {
                 isContinuousChain = false
                 break
             }
@@ -172,7 +172,12 @@ class CrashDetector(
         }
 
         if (oldestValidRestingTimestamp != Long.MAX_VALUE && newestValidRestingTimestamp != Long.MIN_VALUE) {
-            restingDuration = newestValidRestingTimestamp - oldestValidRestingTimestamp
+            val gapToStart = oldestValidRestingTimestamp - stateEnterTimestamp
+            if (gapToStart <= config.maxAcceptableGapNanos) {
+                restingDuration = newestValidRestingTimestamp - stateEnterTimestamp
+            } else {
+                restingDuration = newestValidRestingTimestamp - oldestValidRestingTimestamp
+            }
         }
 
         if (isContinuousChain && restingDuration >= config.persistenceWindowNanos) {
@@ -194,12 +199,23 @@ class CrashDetector(
     }
 
     private fun getMagnitude(values: FloatArray): Float {
+        if (values.size < 3) return Float.NaN
+        for (i in 0..2) {
+            if (values[i].isNaN() || values[i].isInfinite()) return Float.NaN
+        }
         return sqrt((values[0] * values[0] + values[1] * values[1] + values[2] * values[2]).toDouble()).toFloat()
     }
 
     private fun calculateJerk(curr: SensorData, prev: SensorData): Float {
         val dtSec = (curr.timestamp - prev.timestamp) / 1e9f
-        if (dtSec <= 0f) return 0f
+        if (dtSec <= 0f) return Float.NaN
+        
+        if (curr.values.size < 3 || prev.values.size < 3) return Float.NaN
+        
+        for (i in 0..2) {
+            if (curr.values[i].isNaN() || curr.values[i].isInfinite()) return Float.NaN
+            if (prev.values[i].isNaN() || prev.values[i].isInfinite()) return Float.NaN
+        }
 
         val dx = curr.values[0] - prev.values[0]
         val dy = curr.values[1] - prev.values[1]

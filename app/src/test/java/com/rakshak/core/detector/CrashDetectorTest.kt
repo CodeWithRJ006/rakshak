@@ -22,6 +22,57 @@ class CrashDetectorTest {
     }
 
     @Test
+    fun testMalformedDataShortArrayIsSafelyIgnored() {
+        val detector = CrashDetector(defaultConfig)
+        
+        val t0 = 0L
+        val t1 = 20_000_000L
+        
+        // This vector only has 2 elements!
+        val badVector = floatArrayOf(40.0f, 40.0f)
+        val buffer = listOf(
+            SensorData(t0, vector(9.8f)),
+            SensorData(t1, badVector)
+        )
+        detector.processAccelerometerBuffer(buffer)
+        
+        // Should ignore it and stay in monitoring
+        assertEquals(DetectorState.MONITORING, detector.currentState)
+    }
+
+    @Test
+    fun testMalformedDataNaNIsSafelyIgnored() {
+        val detector = CrashDetector(defaultConfig)
+        
+        val t0 = 0L
+        val t1 = 20_000_000L
+        val buffer = listOf(
+            SensorData(t0, vector(9.8f)),
+            SensorData(t1, floatArrayOf(40.0f, Float.NaN, 0f))
+        )
+        detector.processAccelerometerBuffer(buffer)
+        
+        // Should ignore it and stay in monitoring
+        assertEquals(DetectorState.MONITORING, detector.currentState)
+    }
+
+    @Test
+    fun testMalformedDataInfiniteIsSafelyIgnored() {
+        val detector = CrashDetector(defaultConfig)
+        
+        val t0 = 0L
+        val t1 = 20_000_000L
+        val buffer = listOf(
+            SensorData(t0, vector(9.8f)),
+            SensorData(t1, floatArrayOf(Float.POSITIVE_INFINITY, 0f, 0f))
+        )
+        detector.processAccelerometerBuffer(buffer)
+        
+        // Should ignore it and stay in monitoring
+        assertEquals(DetectorState.MONITORING, detector.currentState)
+    }
+
+    @Test
     fun testHistoricalSpikeCannotRetrigger() {
         val config = CrashDetectionConfig(jerkThreshold = 100000f)
         val detector = CrashDetector(config)
