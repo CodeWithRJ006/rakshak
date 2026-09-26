@@ -42,6 +42,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val lastAlertResult = P0PipelineStatus.lastAlertResult
 
     // AI States
+    data class TelemetryState(val peakGForce: Float = 0f, val jerkGs: Float = 0f, val gyroRadS: Float = 0f, val locationStatus: String = "unavailable")
+
+    private val _lastTelemetry = MutableStateFlow<TelemetryState?>(null)
+    val lastTelemetry: StateFlow<TelemetryState?> = _lastTelemetry
+
     private val _aiState = MutableStateFlow(AiState.IDLE)
     val aiState: StateFlow<AiState> = _aiState
 
@@ -83,12 +88,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _aiState.value = AiState.ANALYZING
             _aiResultText.value = ""
+            
+            val tel = TelemetryState(12.5f, 850f, 12f, "available")
+            _lastTelemetry.value = tel
+            
             // Mock telemetry values for the hackathon simulate crash
             val result = AIIncidentAssessment.generateAssessment(
-                peakGForce = 12.5f,
-                jerkGs = 850f,
-                gyroRadS = 12f,
-                locationStatus = "available"
+                peakGForce = tel.peakGForce,
+                jerkGs = tel.jerkGs,
+                gyroRadS = tel.gyroRadS,
+                locationStatus = tel.locationStatus
             )
             _aiResultText.value = result
             _aiState.value = AiState.READY
@@ -105,14 +114,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _aiState.value = AiState.ANALYZING
             _aiResultText.value = ""
+            
+            val tel = TelemetryState(15.0f, 1200f, 28f, "unavailable")
+            _lastTelemetry.value = tel
+            
             // Mock telemetry values for synthetic trace (Ejection)
             val result = AIIncidentAssessment.generateAssessment(
-                peakGForce = 15.0f,
-                jerkGs = 1200f,
-                gyroRadS = 28f,
-                locationStatus = "unavailable"
+                peakGForce = tel.peakGForce,
+                jerkGs = tel.jerkGs,
+                gyroRadS = tel.gyroRadS,
+                locationStatus = tel.locationStatus
             )
             _aiResultText.value = result
+            _aiState.value = AiState.READY
+        }
+    }
+
+    fun explainAlert() {
+        val tel = _lastTelemetry.value ?: return
+        viewModelScope.launch {
+            _aiState.value = AiState.ANALYZING
+            _aiResultText.value = ""
+            val explanation = AIIncidentAssessment.explainAlert(tel.peakGForce, tel.jerkGs, tel.gyroRadS)
+            _aiResultText.value = explanation
+            _aiState.value = AiState.READY
+        }
+    }
+
+    fun verifyWithCamera(bitmap: android.graphics.Bitmap?) {
+        val tel = _lastTelemetry.value ?: TelemetryState(10f, 500f, 10f)
+        viewModelScope.launch {
+            _aiState.value = AiState.ANALYZING
+            _aiResultText.value = ""
+            val assessment = AIIncidentAssessment.verifyWithCamera(tel.peakGForce, tel.jerkGs, tel.gyroRadS, bitmap)
+            _aiResultText.value = assessment
             _aiState.value = AiState.READY
         }
     }

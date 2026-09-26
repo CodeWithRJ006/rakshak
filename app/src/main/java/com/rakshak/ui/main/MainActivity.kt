@@ -28,7 +28,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
+import com.rakshak.core.sensor.CameraCaptureHelper
 import com.rakshak.core.mode.AppMode
 import com.rakshak.core.sensor.SensorService
 import kotlinx.coroutines.delay
@@ -40,7 +44,8 @@ class MainActivity : ComponentActivity() {
     private val ALL_PERMISSIONS = arrayOf(
         Manifest.permission.SEND_SMS,
         Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+        Manifest.permission.CAMERA
     )
 
     private val permissionLauncher = registerForActivityResult(
@@ -94,6 +99,11 @@ fun HomeScreen(viewModel: MainViewModel) {
     val isModelLoaded by viewModel.isModelLoaded.collectAsState()
     val detectorState by viewModel.detectorState.collectAsState()
     val isServiceRunning by viewModel.isServiceRunning.collectAsState()
+    val lastTelemetry by viewModel.lastTelemetry.collectAsState()
+
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         delay(100)
@@ -183,6 +193,33 @@ fun HomeScreen(viewModel: MainViewModel) {
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF9800))
                     ) {
                         Text("⚡ TEST INCIDENT (EJECTION)", fontWeight = FontWeight.Bold)
+                    }
+                    
+                    if (lastTelemetry != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = { viewModel.explainAlert() },
+                                modifier = Modifier.weight(1f).height(50.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C3140)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("🤔 WHY ALERT?", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            
+                            Button(
+                                onClick = { 
+                                    coroutineScope.launch {
+                                        val bitmap = CameraCaptureHelper.takePicture(context, lifecycleOwner)
+                                        viewModel.verifyWithCamera(bitmap)
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).height(50.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("📸 CAM VERIFY", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }

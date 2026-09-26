@@ -75,6 +75,13 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     
     implementation(libs.androidx.appcompat)
+    
+    // CameraX for Multimodal Verification
+    val camerax_version = "1.3.3"
+    implementation("androidx.camera:camera-core:${camerax_version}")
+    implementation("androidx.camera:camera-camera2:${camerax_version}")
+    implementation("androidx.camera:camera-lifecycle:${camerax_version}")
+    implementation("androidx.camera:camera-view:${camerax_version}")
     implementation(libs.material)
     implementation(libs.androidx.constraintlayout)
 
