@@ -19,6 +19,7 @@ import com.rakshak.R
 import com.rakshak.core.alert.AndroidLocationController
 import com.rakshak.core.alert.AndroidSmsController
 import com.rakshak.core.alert.TestContactConfig
+import com.rakshak.core.log.HMACIncidentLogger
 import com.rakshak.core.alert.LocationController
 import com.rakshak.core.alert.SmsController
 import com.rakshak.core.detector.CrashDetector
@@ -61,12 +62,12 @@ class SensorService : Service(), SensorEventListener {
         serviceScope.launch {
             accelerometerBuffer.flow.collect { buffer ->
                 if (buffer.isNotEmpty()) {
-                    detector.processAccelerometerBuffer(buffer)
+                    detector.processSensorBuffers(buffer, gyroscopeBuffer.flow.value)
                 }
             }
         }
 
-        val pipeline = P0Pipeline(detector, smsController, locationController) { listOf(TestContactConfig.testContactNumber) }
+        val pipeline = P0Pipeline(detector, smsController, locationController, { listOf(TestContactConfig.testContactNumber) }, HMACIncidentLogger(this))
         serviceScope.launch {
             pipeline.collectStateFlow()
         }
@@ -94,6 +95,37 @@ class SensorService : Service(), SensorEventListener {
         }
 
         return START_STICKY
+    }
+
+    private fun injectSyntheticTrace() {
+        serviceScope.launch {
+            val t0 = System.nanoTime()
+            val accelTrace = mutableListOf<SensorData>()
+            val gyroTrace = mutableListOf<SensorData>()
+
+            // 1. Normal monitoring
+            accelTrace.add(SensorData(t0, floatArrayOf(0f, 9.8f, 0f)))
+            gyroTrace.add(SensorData(t0, floatArrayOf(0.1f, 0.1f, 0.1f)))
+            
+            // 2. Huge impact (magnitude ~40 > 30 threshold)
+            val t1 = t0 + 100_000_000L // +100ms
+            accelTrace.add(SensorData(t1, floatArrayOf(40f, 0f, 0f)))
+            
+            // 3. High Jerk and Gyro corroboration (magnitude > 4.0 threshold)
+            val t2 = t1 + 100_000_000L // +100ms inside candidate window
+            accelTrace.add(SensorData(t2, floatArrayOf(80f, 0f, 0f)))
+            gyroTrace.add(SensorData(t2, floatArrayOf(5f, 5f, 5f)))
+
+            // 4. Persistence Window (resting for >2 seconds)
+            var t = t2
+            while (t - t2 <= 2_500_000_000L) {
+                t += 100_000_000L
+                accelTrace.add(SensorData(t, floatArrayOf(0f, 9.8f, 0f)))
+            }
+
+            // Push trace to the detector
+            detector.processSensorBuffers(accelTrace, gyroTrace)
+        }
     }
 
     private fun startForegroundSpecialUse() {
@@ -159,6 +191,9 @@ class SensorService : Service(), SensorEventListener {
         private const val TAG = "SensorService"
         private const val NOTIFICATION_ID = 1001
         const val ACTION_SIMULATE_CRASH = "com.rakshak.action.SIMULATE_CRASH"
+        const val ACTION_INJECT_TRACE = "com.rakshak.action.INJECT_TRACE"
     }
 }
+
+
 

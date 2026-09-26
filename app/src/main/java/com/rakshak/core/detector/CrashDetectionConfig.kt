@@ -7,6 +7,9 @@ data class CrashDetectionConfig(
     /** Jerk magnitude required to advance to CONFIRMING state (m/s^3). */
     val jerkThreshold: Float = 100.0f,
     
+    /** Gyroscope magnitude required to corroborate an IMPACT_CANDIDATE state (rad/s). */
+    val gyroMagnitudeThreshold: Float = 4.0f,
+    
     /** Maximum time to find a jerk spike after an acceleration spike (nanoseconds). */
     val candidateTimeoutNanos: Long = 500_000_000L, // 0.5 seconds
     
@@ -25,3 +28,4 @@ data class CrashDetectionConfig(
     /** How long to block duplicate alerts after an ALERTED state (nanoseconds). */
     val cooldownWindowNanos: Long = 10_000_000_000L // 10 seconds
 )
+

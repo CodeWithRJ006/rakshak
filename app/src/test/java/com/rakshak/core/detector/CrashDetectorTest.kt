@@ -6,7 +6,7 @@ import org.junit.Test
 
 class CrashDetectorTest {
 
-    private val defaultConfig = CrashDetectionConfig()
+    private val defaultConfig = CrashDetectionConfig(gyroMagnitudeThreshold = 0f, )
     
     private fun vector(x: Float): FloatArray = floatArrayOf(x, 0f, 0f)
 
@@ -14,10 +14,10 @@ class CrashDetectorTest {
     fun testEmptyOrInsufficientBufferIsHandledSafely() {
         val detector = CrashDetector(defaultConfig)
         
-        detector.processAccelerometerBuffer(emptyList())
+        detector.processSensorBuffers(emptyList())
         assertEquals(DetectorState.MONITORING, detector.currentState)
 
-        detector.processAccelerometerBuffer(listOf(SensorData(1000L, vector(9.8f))))
+        detector.processSensorBuffers(listOf(SensorData(1000L, vector(9.8f))))
         assertEquals(DetectorState.MONITORING, detector.currentState)
     }
 
@@ -34,7 +34,7 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, badVector)
         )
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         
         // Should ignore it and stay in monitoring
         assertEquals(DetectorState.MONITORING, detector.currentState)
@@ -50,7 +50,7 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, floatArrayOf(40.0f, Float.NaN, 0f))
         )
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         
         // Should ignore it and stay in monitoring
         assertEquals(DetectorState.MONITORING, detector.currentState)
@@ -66,7 +66,7 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, floatArrayOf(Float.POSITIVE_INFINITY, 0f, 0f))
         )
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         
         // Should ignore it and stay in monitoring
         assertEquals(DetectorState.MONITORING, detector.currentState)
@@ -83,19 +83,19 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, vector(40.0f))
         )
-        detector.processAccelerometerBuffer(buffer1)
+        detector.processSensorBuffers(buffer1)
         assertEquals(DetectorState.IMPACT_CANDIDATE, detector.currentState)
 
         val timeoutTime = t1 + config.candidateTimeoutNanos + 1L
         val buffer2 = buffer1 + SensorData(timeoutTime, vector(9.8f))
         
-        detector.processAccelerometerBuffer(buffer2)
+        detector.processSensorBuffers(buffer2)
         assertEquals(DetectorState.MONITORING, detector.currentState)
 
         val newTime = timeoutTime + 20_000_000L
         val buffer3 = buffer2 + SensorData(newTime, vector(9.8f))
         
-        detector.processAccelerometerBuffer(buffer3)
+        detector.processSensorBuffers(buffer3)
         assertEquals(DetectorState.MONITORING, detector.currentState)
     }
 
@@ -109,13 +109,13 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, vector(40.0f))
         )
-        detector.processAccelerometerBuffer(buffer1)
+        detector.processSensorBuffers(buffer1)
         assertEquals(DetectorState.IMPACT_CANDIDATE, detector.currentState)
 
         val t2 = t1 + defaultConfig.candidateTimeoutNanos - 100_000_000L // inside window
         val buffer2 = buffer1 + SensorData(t2, vector(80.0f)) // causes high jerk
         
-        detector.processAccelerometerBuffer(buffer2)
+        detector.processSensorBuffers(buffer2)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
     }
 
@@ -129,13 +129,13 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, vector(40.0f))
         )
-        detector.processAccelerometerBuffer(buffer1)
+        detector.processSensorBuffers(buffer1)
         assertEquals(DetectorState.IMPACT_CANDIDATE, detector.currentState)
 
         val t2 = t1 + defaultConfig.candidateTimeoutNanos + 100_000_000L // outside window
         val buffer2 = buffer1 + SensorData(t2, vector(80.0f)) // causes high jerk, but too late
         
-        detector.processAccelerometerBuffer(buffer2)
+        detector.processSensorBuffers(buffer2)
         assertEquals(DetectorState.MONITORING, detector.currentState)
     }
 
@@ -149,7 +149,7 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, vector(40.0f)) // Immediately jumps to CONFIRMING
         )
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
 
         var t = t1
@@ -159,7 +159,7 @@ class CrashDetectorTest {
             buffer.add(SensorData(t, vector(9.8f)))
         }
         
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMED, detector.currentState)
     }
 
@@ -173,7 +173,7 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, vector(40.0f))
         )
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
 
         val t2 = t1 + 100_000_000L
@@ -186,7 +186,7 @@ class CrashDetectorTest {
         val t4 = t3 + 1_000_000_000L
         buffer.add(SensorData(t4, vector(9.8f)))
         
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState) // Waiting or monitoring, but NOT confirmed
     }
 
@@ -200,7 +200,7 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, vector(40.0f))
         )
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
 
         var t = t1
@@ -211,7 +211,7 @@ class CrashDetectorTest {
             buffer.add(SensorData(t, vector(mag)))
         }
         
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState) // Hasn't had 2s of continuous rest
     }
 
@@ -225,7 +225,7 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, vector(40.0f))
         )
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
 
         val step = 100_000_000L
@@ -236,7 +236,7 @@ class CrashDetectorTest {
         buffer.add(SensorData(t + 2_000_000_000L, vector(9.8f))) 
         buffer.add(SensorData(t, vector(9.8f))) // Out of order!
 
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
     }
 
@@ -250,14 +250,14 @@ class CrashDetectorTest {
             SensorData(t0, vector(9.8f)),
             SensorData(t1, vector(40.0f))
         )
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
 
         val t2 = t1 + 2_500_000_000L 
         buffer.add(SensorData(t2, vector(9.8f)))
         buffer.add(SensorData(t2, vector(9.8f))) // Duplicate timestamp!
         
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
     }
 
@@ -275,24 +275,71 @@ class CrashDetectorTest {
             SensorData(300L, vector(9.8f)),
             SensorData(300L + 20_000_000L, vector(40.0f))
         )
-        detector.processAccelerometerBuffer(buffer)
+        detector.processSensorBuffers(buffer)
         assertEquals(DetectorState.COOLDOWN, detector.currentState)
 
         detector.triggerExternalIncident(200L)
         assertEquals(DetectorState.COOLDOWN, detector.currentState)
 
         val afterCooldown = 300L + 20_000_000L + defaultConfig.cooldownWindowNanos + 1L
-        detector.processAccelerometerBuffer(listOf(
+        detector.processSensorBuffers(listOf(
             SensorData(300L + 20_000_000L, vector(40.0f)),
             SensorData(afterCooldown, vector(9.8f))
         ))
         assertEquals(DetectorState.MONITORING, detector.currentState)
         
         val newCrash = afterCooldown + 400_000_000L // 0.4s gap prevents instantaneous jerk confirmation
-        detector.processAccelerometerBuffer(listOf(
+        detector.processSensorBuffers(listOf(
             SensorData(afterCooldown, vector(9.8f)),
             SensorData(newCrash, vector(40.0f))
         ))
         assertEquals(DetectorState.IMPACT_CANDIDATE, detector.currentState)
+    }    @Test
+    fun testMissingGyroSpikePreventsConfirmation() {
+        // Gyro is required
+        val configWithGyro = CrashDetectionConfig(gyroMagnitudeThreshold = 4.0f)
+        val detector = CrashDetector(configWithGyro)
+        
+        val t0 = 0L
+        val t1 = 400_000_000L
+        val buffer1 = listOf(
+            SensorData(t0, vector(9.8f)),
+            SensorData(t1, vector(40.0f))
+        )
+        detector.processSensorBuffers(buffer1)
+        assertEquals(DetectorState.IMPACT_CANDIDATE, detector.currentState)
+
+        val t2 = t1 + 100_000_000L
+        val buffer2 = buffer1 + SensorData(t2, vector(80.0f)) // causes high jerk
+        
+        // No gyro data! Should NOT confirm
+        detector.processSensorBuffers(buffer2)
+        assertEquals(DetectorState.IMPACT_CANDIDATE, detector.currentState)
+    }
+
+    @Test
+    fun testValidGyroSpikeAllowsConfirmation() {
+        val configWithGyro = CrashDetectionConfig(gyroMagnitudeThreshold = 4.0f)
+        val detector = CrashDetector(configWithGyro)
+        
+        val t0 = 0L
+        val t1 = 400_000_000L
+        val buffer1 = listOf(
+            SensorData(t0, vector(9.8f)),
+            SensorData(t1, vector(40.0f))
+        )
+        detector.processSensorBuffers(buffer1)
+        assertEquals(DetectorState.IMPACT_CANDIDATE, detector.currentState)
+
+        val t2 = t1 + 100_000_000L
+        val buffer2 = buffer1 + SensorData(t2, vector(80.0f)) // causes high jerk
+        
+        // Valid gyro data
+        val gyroBuffer = listOf(
+            SensorData(t2, vector(5.0f)) // > 4.0 threshold
+        )
+        detector.processSensorBuffers(buffer2, gyroBuffer)
+        assertEquals(DetectorState.CONFIRMING, detector.currentState)
     }
 }
+

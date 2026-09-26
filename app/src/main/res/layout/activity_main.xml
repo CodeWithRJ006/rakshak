@@ -183,6 +183,14 @@
                 android:layout_height="wrap_content"
                 android:text="Simulate Crash"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_inject_trace"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Inject Sensor Trace"
+                style="@style/Widget.MaterialComponents.Button.TextButton" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
@@ -227,4 +235,5 @@
         app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+
 

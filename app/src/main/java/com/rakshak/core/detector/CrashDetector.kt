@@ -44,11 +44,11 @@ class CrashDetector(
     }
 
     @Synchronized
-    fun processAccelerometerBuffer(buffer: List<SensorData>) {
-        if (buffer.size < 2) return
+    fun processSensorBuffers(accelBuffer: List<SensorData>, gyroBuffer: List<SensorData> = emptyList()) {
+        if (accelBuffer.size < 2) return
 
         var maxTimestamp = Long.MIN_VALUE
-        for (sample in buffer) {
+        for (sample in accelBuffer) {
             if (sample.timestamp > maxTimestamp) {
                 maxTimestamp = sample.timestamp
             }
@@ -59,9 +59,9 @@ class CrashDetector(
         lastProcessedTimestamp = latestTimestamp
 
         when (currentState) {
-            DetectorState.MONITORING -> evaluateMonitoring(buffer, latestTimestamp)
-            DetectorState.IMPACT_CANDIDATE -> evaluateImpactCandidate(buffer, latestTimestamp)
-            DetectorState.CONFIRMING -> evaluateConfirming(buffer, latestTimestamp)
+            DetectorState.MONITORING -> evaluateMonitoring(accelBuffer, latestTimestamp, gyroBuffer)
+            DetectorState.IMPACT_CANDIDATE -> evaluateImpactCandidate(accelBuffer, latestTimestamp, gyroBuffer)
+            DetectorState.CONFIRMING -> evaluateConfirming(accelBuffer, latestTimestamp)
             DetectorState.ALERTED -> {
                 transitionTo(DetectorState.COOLDOWN, latestTimestamp)
             }
@@ -70,9 +70,9 @@ class CrashDetector(
         }
     }
 
-    private fun evaluateMonitoring(buffer: List<SensorData>, latestTimestamp: Long) {
-        for (i in buffer.indices) {
-            val sample = buffer[i]
+    private fun evaluateMonitoring(accelBuffer: List<SensorData>, latestTimestamp: Long, gyroBuffer: List<SensorData>) {
+        for (i in accelBuffer.indices) {
+            val sample = accelBuffer[i]
             if (sample.timestamp <= lastMonitoredTimestamp) continue
 
             lastMonitoredTimestamp = sample.timestamp
@@ -82,18 +82,18 @@ class CrashDetector(
             
             if (mag >= config.accelMagnitudeThreshold) {
                 transitionTo(DetectorState.IMPACT_CANDIDATE, sample.timestamp)
-                evaluateImpactCandidate(buffer, latestTimestamp)
+                evaluateImpactCandidate(accelBuffer, latestTimestamp, gyroBuffer)
                 return
             }
         }
     }
 
-    private fun evaluateImpactCandidate(buffer: List<SensorData>, latestTimestamp: Long) {
+    private fun evaluateImpactCandidate(accelBuffer: List<SensorData>, latestTimestamp: Long, gyroBuffer: List<SensorData>) {
         if (currentState != DetectorState.IMPACT_CANDIDATE) return
 
-        for (i in 1 until buffer.size) {
-            val prev = buffer[i - 1]
-            val curr = buffer[i]
+        for (i in 1 until accelBuffer.size) {
+            val prev = accelBuffer[i - 1]
+            val curr = accelBuffer[i]
             
             if (curr.timestamp < stateEnterTimestamp) continue
             if (curr.timestamp <= prev.timestamp) continue
@@ -105,9 +105,11 @@ class CrashDetector(
             val jerk = calculateJerk(curr, prev)
             if (jerk.isNaN()) continue
             
-            if (jerk >= config.jerkThreshold) {
-                transitionTo(DetectorState.CONFIRMING, curr.timestamp)
-                return
+                        if (jerk >= config.jerkThreshold) {
+                if (checkGyroCorroboration(curr.timestamp, gyroBuffer)) {
+                    transitionTo(DetectorState.CONFIRMING, curr.timestamp)
+                    return
+                }
             }
         }
 
@@ -117,7 +119,7 @@ class CrashDetector(
         }
     }
 
-    private fun evaluateConfirming(buffer: List<SensorData>, latestTimestamp: Long) {
+    private fun evaluateConfirming(accelBuffer: List<SensorData>, latestTimestamp: Long) {
         if (currentState != DetectorState.CONFIRMING) return
 
         val elapsedNanos = latestTimestamp - stateEnterTimestamp
@@ -134,8 +136,8 @@ class CrashDetector(
         var newestValidRestingTimestamp = Long.MIN_VALUE
         var isContinuousChain = true
 
-        for (i in buffer.indices.reversed()) {
-            val sample = buffer[i]
+        for (i in accelBuffer.indices.reversed()) {
+            val sample = accelBuffer[i]
             if (sample.timestamp <= stateEnterTimestamp) break
             
             if (prevTimestamp == Long.MAX_VALUE) {
@@ -198,6 +200,21 @@ class CrashDetector(
         _stateFlow.value = newState
     }
 
+    private fun checkGyroCorroboration(jerkTimestamp: Long, gyroBuffer: List<SensorData>): Boolean {
+        if (config.gyroMagnitudeThreshold <= 0f) return true
+        val startWindow = stateEnterTimestamp
+        val endWindow = jerkTimestamp + 100_000_000L
+        for (sample in gyroBuffer) {
+            if (sample.timestamp in startWindow..endWindow) {
+                val mag = getMagnitude(sample.values)
+                if (!mag.isNaN() && mag >= config.gyroMagnitudeThreshold) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     private fun getMagnitude(values: FloatArray): Float {
         if (values.size < 3) return Float.NaN
         for (i in 0..2) {
@@ -225,3 +242,7 @@ class CrashDetector(
         return dv / dtSec
     }
 }
+
+
+
+

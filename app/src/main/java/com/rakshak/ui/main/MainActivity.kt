@@ -89,7 +89,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupTestControls() {
         val etTestContact = findViewById<android.widget.EditText>(R.id.et_test_contact)
-        val btnSimulateCrash = findViewById<android.view.View>(R.id.btn_simulate_crash)
+                val btnSimulateCrash = findViewById<android.view.View>(R.id.btn_simulate_crash)
+        val btnInjectTrace = findViewById<android.view.View>(R.id.btn_inject_trace)
 
         etTestContact?.setText(com.rakshak.core.alert.TestContactConfig.testContactNumber)
 
@@ -103,7 +104,15 @@ class MainActivity : AppCompatActivity() {
                 action = com.rakshak.core.sensor.SensorService.ACTION_SIMULATE_CRASH
             }
             androidx.core.content.ContextCompat.startForegroundService(this, intent)
-            android.widget.Toast.makeText(this, "Test Triggered", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(this, "Test Triggered", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        
+        btnInjectTrace?.setOnClickListener {
+            val intent = android.content.Intent(this, com.rakshak.core.sensor.SensorService::class.java).apply {
+                action = com.rakshak.core.sensor.SensorService.ACTION_INJECT_TRACE
+            }
+            androidx.core.content.ContextCompat.startForegroundService(this, intent)
+            android.widget.Toast.makeText(this, "Trace Injected", android.widget.Toast.LENGTH_SHORT).show()
         }
         observeViewModel()
 
@@ -325,6 +334,7 @@ private class ReadinessAdapter(
             old == new
     }
 }
+
 
 
 

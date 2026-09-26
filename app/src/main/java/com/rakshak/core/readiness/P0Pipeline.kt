@@ -9,18 +9,25 @@ import com.rakshak.core.detector.DetectorState
 import com.rakshak.core.mode.AppMode
 import com.rakshak.core.mode.ModeManager
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import com.rakshak.core.log.HMACIncidentLogger
 
 class P0Pipeline(
     private val detector: CrashDetector,
     private val smsController: SmsController,
     private val locationController: LocationController,
-    private val contactProvider: () -> List<String>
+    private val contactProvider: () -> List<String>,
+    private val incidentLogger: HMACIncidentLogger? = null
 ) {
     var currentIncidentHandled = false
         private set
 
     var alertCount = 0
         private set
+        
+    private val pipelineScope = CoroutineScope(Dispatchers.Default)
         
     suspend fun collectStateFlow() {
         detector.stateFlow.collectLatest { state ->
@@ -38,6 +45,11 @@ class P0Pipeline(
                 
                 val alertSender = AlertSender(alertMode, smsController, locationController, contactProvider())
                 val result = alertSender.sendEmergencyAlert()
+                
+                // HMAC Incident Logging
+                pipelineScope.launch {
+                    incidentLogger?.logIncident("CONFIRMED_CRASH|Result:$result")
+                }
                 alertCount++
                 
                 P0PipelineStatus.updateLastAlertResult(result)
