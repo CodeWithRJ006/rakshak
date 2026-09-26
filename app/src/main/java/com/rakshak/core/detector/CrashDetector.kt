@@ -1,6 +1,9 @@
 package com.rakshak.core.detector
 
 import com.rakshak.core.sensor.SensorData
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.sqrt
 
 enum class DetectorState {
@@ -15,11 +18,18 @@ enum class DetectorState {
 class CrashDetector(
     private val config: CrashDetectionConfig = CrashDetectionConfig()
 ) {
-    var currentState: DetectorState = DetectorState.MONITORING
-        private set
+    private val _stateFlow = MutableStateFlow(DetectorState.MONITORING)
+    val stateFlow: StateFlow<DetectorState> = _stateFlow.asStateFlow()
+
+    var currentState: DetectorState
+        get() = _stateFlow.value
+        private set(value) {
+            _stateFlow.value = value
+        }
 
     private var stateEnterTimestamp: Long = 0L
     private var lastProcessedTimestamp: Long = 0L
+    private var lastMonitoredTimestamp: Long = 0L
 
     fun triggerExternalIncident(timestamp: Long) {
         if (currentState != DetectorState.COOLDOWN && currentState != DetectorState.ALERTED) {
@@ -30,7 +40,6 @@ class CrashDetector(
     fun markAlerted(timestamp: Long) {
         if (currentState == DetectorState.CONFIRMED) {
             transitionTo(DetectorState.ALERTED, timestamp)
-            transitionTo(DetectorState.COOLDOWN, timestamp)
         }
     }
 
@@ -46,14 +55,21 @@ class CrashDetector(
             DetectorState.MONITORING -> evaluateMonitoring(buffer)
             DetectorState.IMPACT_CANDIDATE -> evaluateImpactCandidate(buffer, latestTimestamp)
             DetectorState.CONFIRMING -> evaluateConfirming(buffer, latestTimestamp)
+            DetectorState.ALERTED -> {
+                transitionTo(DetectorState.COOLDOWN, latestTimestamp)
+            }
             DetectorState.COOLDOWN -> evaluateCooldown(latestTimestamp)
-            DetectorState.CONFIRMED, DetectorState.ALERTED -> {}
+            DetectorState.CONFIRMED -> {}
         }
     }
 
     private fun evaluateMonitoring(buffer: List<SensorData>) {
         for (i in buffer.indices) {
             val sample = buffer[i]
+            if (sample.timestamp <= lastMonitoredTimestamp) continue
+
+            lastMonitoredTimestamp = sample.timestamp
+            
             val mag = getMagnitude(sample.values)
             if (mag >= config.accelMagnitudeThreshold) {
                 transitionTo(DetectorState.IMPACT_CANDIDATE, sample.timestamp)
@@ -71,6 +87,7 @@ class CrashDetector(
             val curr = buffer[i]
             
             if (curr.timestamp < stateEnterTimestamp) continue
+            if (curr.timestamp <= prev.timestamp) continue
 
             val jerk = calculateJerk(curr, prev)
             if (jerk >= config.jerkThreshold) {
@@ -81,6 +98,7 @@ class CrashDetector(
 
         if (latestTimestamp - stateEnterTimestamp >= config.candidateTimeoutNanos) {
             transitionTo(DetectorState.MONITORING, latestTimestamp)
+            lastMonitoredTimestamp = latestTimestamp
         }
     }
 
@@ -91,14 +109,33 @@ class CrashDetector(
         
         if (elapsedNanos >= config.persistenceTimeoutNanos) {
             transitionTo(DetectorState.MONITORING, latestTimestamp)
+            lastMonitoredTimestamp = latestTimestamp
             return
         }
 
         var isResting = true
+        var prevTimestamp = latestTimestamp
+
         for (i in buffer.indices.reversed()) {
             val sample = buffer[i]
-            if (sample.timestamp <= stateEnterTimestamp) break
             
+            val timeToCheck = if (sample.timestamp <= stateEnterTimestamp) stateEnterTimestamp else sample.timestamp
+            
+            val gap = prevTimestamp - timeToCheck
+            if (gap > config.maxAcceptableGapNanos) {
+                isResting = false
+                break
+            }
+            prevTimestamp = timeToCheck
+            
+            if (sample.timestamp <= stateEnterTimestamp) {
+                break
+            }
+            
+            if (sample.timestamp >= prevTimestamp && i != buffer.lastIndex) {
+                continue 
+            }
+
             val mag = getMagnitude(sample.values)
             if (mag > config.persistenceRestingThreshold) {
                 isResting = false
@@ -114,12 +151,14 @@ class CrashDetector(
     private fun evaluateCooldown(latestTimestamp: Long) {
         if (latestTimestamp - stateEnterTimestamp >= config.cooldownWindowNanos) {
             transitionTo(DetectorState.MONITORING, latestTimestamp)
+            lastMonitoredTimestamp = latestTimestamp
         }
     }
 
     private fun transitionTo(newState: DetectorState, timestamp: Long) {
         currentState = newState
         stateEnterTimestamp = timestamp
+        _stateFlow.value = newState
     }
 
     private fun getMagnitude(values: FloatArray): Float {

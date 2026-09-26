@@ -19,6 +19,9 @@ data class CrashDetectionConfig(
     /** The max acceleration magnitude (m/s^2) considered "resting" during CONFIRMING. */
     val persistenceRestingThreshold: Float = 15.0f, // Gravity is 9.8, so 15 allows some wobble
     
+    /** The maximum acceptable gap between sensor readings during persistence checks. */
+    val maxAcceptableGapNanos: Long = 500_000_000L, // 0.5 seconds
+    
     /** How long to block duplicate alerts after an ALERTED state (nanoseconds). */
     val cooldownWindowNanos: Long = 10_000_000_000L // 10 seconds
 )

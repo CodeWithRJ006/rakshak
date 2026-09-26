@@ -22,6 +22,43 @@ class CrashDetectorTest {
     }
 
     @Test
+    fun testHistoricalSpikeIsNotReprocessed() {
+        // Use an impossible jerk threshold so we stay in IMPACT_CANDIDATE then time out
+        val config = CrashDetectionConfig(jerkThreshold = 100000f)
+        val detector = CrashDetector(config)
+        
+        val t0 = 0L
+        val t1 = 20_000_000L
+        val buffer1 = listOf(
+            SensorData(t0, vector(9.8f)),
+            SensorData(t1, vector(40.0f)) // Spike, but not enough jerk to trigger CONFIRMING
+        )
+        detector.processAccelerometerBuffer(buffer1)
+        assertEquals(DetectorState.IMPACT_CANDIDATE, detector.currentState)
+
+        // Timeout candidate
+        val timeoutTime = t1 + config.candidateTimeoutNanos + 1L
+        val buffer2 = buffer1 + SensorData(timeoutTime, vector(9.8f))
+        
+        detector.processAccelerometerBuffer(buffer2)
+        assertEquals(DetectorState.MONITORING, detector.currentState)
+
+        // Process a new sample, old spike is still in buffer
+        val newTime = timeoutTime + 20_000_000L
+        val buffer3 = buffer2 + SensorData(newTime, vector(9.8f))
+        
+        detector.processAccelerometerBuffer(buffer3)
+        // Should NOT jump to IMPACT_CANDIDATE from the old 40.0f spike
+        assertEquals(DetectorState.MONITORING, detector.currentState)
+        
+        // A truly NEW spike should still trigger it
+        val newSpikeTime = newTime + 20_000_000L
+        val buffer4 = buffer3 + SensorData(newSpikeTime, vector(40.0f))
+        detector.processAccelerometerBuffer(buffer4)
+        assertEquals(DetectorState.IMPACT_CANDIDATE, detector.currentState)
+    }
+
+    @Test
     fun testMonitoringToImpactCandidateToConfirmingWithAccelAndJerk() {
         val detector = CrashDetector(defaultConfig)
         
@@ -59,7 +96,8 @@ class CrashDetectorTest {
 
     @Test
     fun testConfirmingPersistenceSucceedsGoesToConfirmed() {
-        val detector = CrashDetector(defaultConfig)
+        val config = CrashDetectionConfig(maxAcceptableGapNanos = 2_000_000_000L) // Prevent gap failure for simple test
+        val detector = CrashDetector(config)
         
         val t0 = 0L
         val t1 = 20_000_000L
@@ -70,8 +108,11 @@ class CrashDetectorTest {
         detector.processAccelerometerBuffer(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
 
-        val restingTime = t1 + defaultConfig.persistenceWindowNanos + 1L
-        buffer.add(SensorData(restingTime, vector(9.8f)))
+        val t2 = t1 + (config.persistenceWindowNanos / 2)
+        buffer.add(SensorData(t2, vector(9.8f)))
+        
+        val t3 = t1 + config.persistenceWindowNanos + 1L
+        buffer.add(SensorData(t3, vector(9.8f)))
         
         detector.processAccelerometerBuffer(buffer)
         assertEquals(DetectorState.CONFIRMED, detector.currentState)
@@ -79,6 +120,51 @@ class CrashDetectorTest {
 
     @Test
     fun testConfirmingPersistenceTimesOutGoesToMonitoring() {
+        val config = CrashDetectionConfig(maxAcceptableGapNanos = 2_000_000_000L)
+        val detector = CrashDetector(config)
+        
+        val t0 = 0L
+        val t1 = 20_000_000L
+        val buffer = mutableListOf(
+            SensorData(t0, vector(9.8f)),
+            SensorData(t1, vector(40.0f))
+        )
+        detector.processAccelerometerBuffer(buffer)
+        assertEquals(DetectorState.CONFIRMING, detector.currentState)
+
+        val timeoutTime = t1 + config.persistenceTimeoutNanos + 1L
+        buffer.add(SensorData(timeoutTime, vector(20.0f)))
+        
+        detector.processAccelerometerBuffer(buffer)
+        assertEquals(DetectorState.MONITORING, detector.currentState)
+    }
+
+    @Test
+    fun testLargeTimestampGapDoesNotFalselySatisfyPersistence() {
+        val config = CrashDetectionConfig(maxAcceptableGapNanos = 500_000_000L)
+        val detector = CrashDetector(config)
+        
+        val t0 = 0L
+        val t1 = 20_000_000L
+        val buffer = mutableListOf(
+            SensorData(t0, vector(9.8f)),
+            SensorData(t1, vector(40.0f))
+        )
+        detector.processAccelerometerBuffer(buffer)
+        assertEquals(DetectorState.CONFIRMING, detector.currentState)
+
+        // Huge gap of 2 seconds
+        val hugeGapTime = t1 + 2_000_000_000L
+        buffer.add(SensorData(hugeGapTime, vector(9.8f)))
+        
+        detector.processAccelerometerBuffer(buffer)
+        // Because of the gap, it shouldn't confirm.
+        // It stays in CONFIRMING until timeout, or returns to monitoring.
+        assertEquals(DetectorState.CONFIRMING, detector.currentState)
+    }
+
+    @Test
+    fun testOutOfOrderAndDuplicateTimestampsHandledSafely() {
         val detector = CrashDetector(defaultConfig)
         
         val t0 = 0L
@@ -90,11 +176,16 @@ class CrashDetectorTest {
         detector.processAccelerometerBuffer(buffer)
         assertEquals(DetectorState.CONFIRMING, detector.currentState)
 
-        val timeoutTime = t1 + defaultConfig.persistenceTimeoutNanos + 1L
-        buffer.add(SensorData(timeoutTime, vector(20.0f)))
+        val t2 = t1 + 20_000_000L
+        val t3 = t2 + 20_000_000L
+        // Add out of order and duplicates
+        buffer.add(SensorData(t3, vector(9.8f)))
+        buffer.add(SensorData(t2, vector(9.8f))) // Out of order
+        buffer.add(SensorData(t3, vector(9.8f))) // Duplicate
         
         detector.processAccelerometerBuffer(buffer)
-        assertEquals(DetectorState.MONITORING, detector.currentState)
+        // Should not crash.
+        assertEquals(DetectorState.CONFIRMING, detector.currentState)
     }
 
     @Test
@@ -105,11 +196,9 @@ class CrashDetectorTest {
         assertEquals(DetectorState.CONFIRMED, detector.currentState)
 
         detector.markAlerted(100L)
-        assertEquals(DetectorState.COOLDOWN, detector.currentState)
+        assertEquals(DetectorState.ALERTED, detector.currentState)
 
-        detector.triggerExternalIncident(200L)
-        assertEquals(DetectorState.COOLDOWN, detector.currentState)
-
+        // The NEXT process triggers the actual cooldown 
         val buffer = listOf(
             SensorData(300L, vector(9.8f)),
             SensorData(300L + 20_000_000L, vector(40.0f))
@@ -117,7 +206,10 @@ class CrashDetectorTest {
         detector.processAccelerometerBuffer(buffer)
         assertEquals(DetectorState.COOLDOWN, detector.currentState)
 
-        val afterCooldown = 100L + defaultConfig.cooldownWindowNanos + 1L
+        detector.triggerExternalIncident(200L)
+        assertEquals(DetectorState.COOLDOWN, detector.currentState)
+
+        val afterCooldown = 300L + 20_000_000L + defaultConfig.cooldownWindowNanos + 1L
         detector.processAccelerometerBuffer(listOf(
             SensorData(300L + 20_000_000L, vector(40.0f)),
             SensorData(afterCooldown, vector(9.8f))
