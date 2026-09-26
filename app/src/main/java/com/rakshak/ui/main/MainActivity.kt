@@ -5,6 +5,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.view.animation.AlphaAnimation
+import android.view.animation.Animation
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.TranslateAnimation
+import android.widget.ScrollView
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.TextView
@@ -81,10 +86,53 @@ class MainActivity : AppCompatActivity() {
         setupModeSwitch()
         setupTestControls()
         setupRefreshButton()
+        setupLiveLogs()
+        
+        // Staggered entry animation for a premium feel
+        animateEntry()
         
         // Start SensorService
         val serviceIntent = android.content.Intent(this, com.rakshak.core.sensor.SensorService::class.java)
         androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
+    }
+
+    private fun animateEntry() {
+        val root = binding.root
+        for (i in 0 until root.childCount) {
+            val child = root.getChildAt(i)
+            val slideIn = TranslateAnimation(0f, 0f, 100f, 0f).apply {
+                duration = 600
+                startOffset = (i * 70).toLong()
+                interpolator = DecelerateInterpolator()
+            }
+            val fadeIn = AlphaAnimation(0f, 1f).apply {
+                duration = 600
+                startOffset = (i * 70).toLong()
+            }
+            val set = android.view.animation.AnimationSet(true).apply {
+                addAnimation(slideIn)
+                addAnimation(fadeIn)
+            }
+            child.startAnimation(set)
+        }
+    }
+
+    private fun setupLiveLogs() {
+        val tvLogs = findViewById<android.widget.TextView>(R.id.tv_live_logs)
+        val svLogs = findViewById<android.widget.ScrollView>(R.id.sv_logs)
+        
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                com.rakshak.core.log.SystemEventLogger.logs.collect { logMsg ->
+                    val currentText = tvLogs.text.toString()
+                    // Keep last 100 lines to avoid memory bloat
+                    val lines = currentText.split("\n").takeLast(99)
+                    val newText = (lines + logMsg).joinToString("\n")
+                    tvLogs.text = newText
+                    svLogs.post { svLogs.smoothScrollTo(0, tvLogs.bottom) }
+                }
+            }
+        }
     }
 
     private fun setupTestControls() {
@@ -100,19 +148,20 @@ class MainActivity : AppCompatActivity() {
                 com.rakshak.core.alert.TestContactConfig.testContactNumber = contact
             }
             
+            com.rakshak.core.log.SystemEventLogger.log("UI", "MANUAL CRASH TRIGGERED")
+            
             val intent = android.content.Intent(this, com.rakshak.core.sensor.SensorService::class.java).apply {
                 action = com.rakshak.core.sensor.SensorService.ACTION_SIMULATE_CRASH
             }
             androidx.core.content.ContextCompat.startForegroundService(this, intent)
-                        android.widget.Toast.makeText(this, "Test Triggered", android.widget.Toast.LENGTH_SHORT).show()
         }
         
         btnInjectTrace?.setOnClickListener {
+            com.rakshak.core.log.SystemEventLogger.log("UI", "INJECTING SYNTHETIC HIGH-G SENSOR TRACE...")
             val intent = android.content.Intent(this, com.rakshak.core.sensor.SensorService::class.java).apply {
                 action = com.rakshak.core.sensor.SensorService.ACTION_INJECT_TRACE
             }
             androidx.core.content.ContextCompat.startForegroundService(this, intent)
-            android.widget.Toast.makeText(this, "Trace Injected", android.widget.Toast.LENGTH_SHORT).show()
         }
         observeViewModel()
 
@@ -157,6 +206,18 @@ class MainActivity : AppCompatActivity() {
                 launch {
                     viewModel.isServiceRunning.collect { running ->
                         findViewById<android.widget.TextView>(R.id.tv_service_status)?.text = "Service: " + if(running) "Running" else "Stopped"
+                        
+                        val indicator = findViewById<android.view.View>(R.id.indicator_status)
+                        if (running) {
+                            val pulse = AlphaAnimation(0.3f, 1.0f).apply {
+                                duration = 800
+                                repeatMode = Animation.REVERSE
+                                repeatCount = Animation.INFINITE
+                            }
+                            indicator?.startAnimation(pulse)
+                        } else {
+                            indicator?.clearAnimation()
+                        }
                     }
                 }
                 launch {

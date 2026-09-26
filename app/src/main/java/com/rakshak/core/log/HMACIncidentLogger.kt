@@ -37,6 +37,8 @@ class HMACIncidentLogger(private val context: Context) {
             
             logFile.appendText(entry, Charsets.UTF_8)
             Log.d("HMACLogger", "Incident logged securely: $payload")
+            SystemEventLogger.log("HMAC", "Integrity Hash Gen: $hmacHex")
+            SystemEventLogger.log("HMAC", "Chain updated in secure vault.")
             
         } catch (e: Exception) {
             Log.e("HMACLogger", "Failed to log incident: $e")

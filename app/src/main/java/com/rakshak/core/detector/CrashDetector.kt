@@ -24,6 +24,9 @@ class CrashDetector(
     var currentState: DetectorState
         get() = _stateFlow.value
         private set(value) {
+            if (_stateFlow.value != value) {
+                com.rakshak.core.log.SystemEventLogger.log("STATE", "${_stateFlow.value.name} -> ${value.name}")
+            }
             _stateFlow.value = value
         }
 
@@ -33,6 +36,7 @@ class CrashDetector(
 
     fun triggerExternalIncident(timestamp: Long) {
         if (currentState != DetectorState.COOLDOWN && currentState != DetectorState.ALERTED) {
+            com.rakshak.core.log.SystemEventLogger.log("INJECT", "Synthetic Trace Injected: HIGH-G FORCES DETECTED")
             transitionTo(DetectorState.CONFIRMED, timestamp)
         }
     }
@@ -81,6 +85,7 @@ class CrashDetector(
             if (mag.isNaN()) continue
             
             if (mag >= config.accelMagnitudeThreshold) {
+                com.rakshak.core.log.SystemEventLogger.log("SENSOR", "Impact spike detected (Mag: $mag G)")
                 transitionTo(DetectorState.IMPACT_CANDIDATE, sample.timestamp)
                 evaluateImpactCandidate(accelBuffer, latestTimestamp, gyroBuffer)
                 return
@@ -107,8 +112,11 @@ class CrashDetector(
             
                         if (jerk >= config.jerkThreshold) {
                 if (checkGyroCorroboration(curr.timestamp, gyroBuffer)) {
+                    com.rakshak.core.log.SystemEventLogger.log("SENSOR", "Jerk + Gyro Corroboration success!")
                     transitionTo(DetectorState.CONFIRMING, curr.timestamp)
                     return
+                } else {
+                    com.rakshak.core.log.SystemEventLogger.log("SENSOR", "Gyro rejected (false positive)")
                 }
             }
         }

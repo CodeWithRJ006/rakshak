@@ -84,6 +84,7 @@ class AlertSender(
 
         // 3. Demo mode logging
         if (mode == AlertMode.DEMO_MODE) {
+            com.rakshak.core.log.SystemEventLogger.log("ALERT", "DEMO MODE: SMS intent cancelled. Message: $message")
             logDemo(AlertResult.ALERT_SENT, locationStatus, message)
             return AlertResult.ALERT_SENT
         }
@@ -91,8 +92,14 @@ class AlertSender(
         // 4. Send SMS immediately
         var successCount = 0
         for (contact in emergencyContacts) {
+            com.rakshak.core.log.SystemEventLogger.log("ALERT", "REAL MODE: Dispatching SMS to $contact")
             val sent = smsController.sendSms(contact, message)
-            if (sent) successCount++
+            if (sent) {
+                com.rakshak.core.log.SystemEventLogger.log("ALERT", "REAL MODE: SMS queued successfully to $contact")
+                successCount++
+            } else {
+                com.rakshak.core.log.SystemEventLogger.log("ALERT", "REAL MODE: SMS Failed for $contact")
+            }
         }
 
         return if (successCount > 0) AlertResult.ALERT_SENT else AlertResult.ALERT_FAILED_UNKNOWN

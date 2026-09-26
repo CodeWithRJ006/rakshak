@@ -6,20 +6,22 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_primary"
+    android:animateLayoutChanges="true"
     tools:context=".ui.main.MainActivity">
 
+    <!-- Header Section -->
     <TextView
         android:id="@+id/tv_title"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:fontFamily="sans-serif-medium"
-        android:letterSpacing="0.05"
+        android:fontFamily="sans-serif-black"
+        android:letterSpacing="0.1"
         android:paddingHorizontal="24dp"
         android:paddingTop="32dp"
         android:paddingBottom="4dp"
-        android:text="@string/app_name"
-        android:textColor="@color/text_primary"
-        android:textSize="28sp"
+        android:text="RAKSHAK"
+        android:textColor="@color/white"
+        android:textSize="32sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
@@ -30,13 +32,16 @@
         android:layout_height="wrap_content"
         android:paddingHorizontal="24dp"
         android:paddingBottom="16dp"
-        android:text="@string/subtitle_system_readiness"
+        android:text="P0 SYSTEM READINESS &amp; TELEMETRY"
         android:textColor="@color/text_secondary"
-        android:textSize="13sp"
+        android:textSize="12sp"
+        android:fontFamily="sans-serif-medium"
+        android:letterSpacing="0.1"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tv_title" />
 
+    <!-- Mode Card -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/card_mode"
         android:layout_width="0dp"
@@ -44,8 +49,10 @@
         android:layout_marginHorizontal="16dp"
         android:layout_marginBottom="12dp"
         app:cardBackgroundColor="@color/surface"
-        app:cardCornerRadius="12dp"
-        app:cardElevation="2dp"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="4dp"
+        app:strokeWidth="1dp"
+        app:strokeColor="#33FFFFFF"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tv_subtitle">
@@ -53,16 +60,17 @@
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="12dp">
+            android:paddingHorizontal="20dp"
+            android:paddingVertical="16dp">
 
             <TextView
                 android:id="@+id/tv_mode_label"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="@string/label_operating_mode"
+                android:text="Operating Mode"
                 android:textColor="@color/text_primary"
-                android:textSize="15sp"
+                android:textSize="16sp"
+                android:fontFamily="sans-serif-medium"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toStartOf="@id/chip_mode"
                 app:layout_constraintStart_toStartOf="parent"
@@ -72,9 +80,10 @@
                 android:id="@+id/chip_mode"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:text="@string/mode_demo"
+                android:layout_marginEnd="12dp"
+                android:text="DEMO"
                 android:textColor="@color/text_on_chip"
+                app:chipCornerRadius="8dp"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toStartOf="@id/switch_mode"
                 app:layout_constraintTop_toTopOf="parent" />
@@ -91,16 +100,18 @@
         </androidx.constraintlayout.widget.ConstraintLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Pipeline Status Card -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/card_pipeline_status"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="16dp"
-        android:layout_marginBottom="12dp"
         android:layout_marginTop="12dp"
         app:cardBackgroundColor="@color/surface"
-        app:cardCornerRadius="12dp"
-        app:cardElevation="2dp"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="4dp"
+        app:strokeWidth="1dp"
+        app:strokeColor="#33FFFFFF"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/card_mode">
@@ -109,48 +120,75 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="20dp">
             
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="P0 Pipeline Status"
-                android:textStyle="bold"
-                android:textColor="@color/text_primary"
-                android:layout_marginBottom="8dp" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="12dp">
+
+                <View
+                    android:id="@+id/indicator_status"
+                    android:layout_width="10dp"
+                    android:layout_height="10dp"
+                    android:background="@drawable/circle_indicator"
+                    android:layout_marginEnd="8dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="PIPELINE STATUS"
+                    android:textSize="12sp"
+                    android:letterSpacing="0.1"
+                    android:fontFamily="sans-serif-black"
+                    android:textColor="@color/status_ok" />
+            </LinearLayout>
                 
             <TextView
                 android:id="@+id/tv_service_status"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Service: Stopped"
-                android:textColor="@color/text_secondary" />
+                android:textSize="15sp"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/text_primary" />
                 
             <TextView
                 android:id="@+id/tv_detector_state"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
                 android:text="Detector: -"
-                android:textColor="@color/text_secondary" />
+                android:textSize="15sp"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/text_primary" />
                 
             <TextView
                 android:id="@+id/tv_last_alert"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
                 android:text="Last Alert: None"
+                android:textSize="15sp"
+                android:fontFamily="sans-serif-medium"
                 android:textColor="@color/text_secondary" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Test Controls Card -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/card_test_controls"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="16dp"
-        android:layout_marginBottom="12dp"
+        android:layout_marginTop="12dp"
         app:cardBackgroundColor="@color/surface"
-        app:cardCornerRadius="12dp"
-        app:cardElevation="2dp"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="4dp"
+        app:strokeWidth="1dp"
+        app:strokeColor="#33FFFFFF"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/card_pipeline_status">
@@ -159,15 +197,17 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="20dp">
             
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Hackathon Testing"
-                android:textStyle="bold"
-                android:textColor="@color/text_primary"
-                android:layout_marginBottom="8dp" />
+                android:text="SIMULATION CONTROLS"
+                android:textSize="12sp"
+                android:letterSpacing="0.1"
+                android:fontFamily="sans-serif-black"
+                android:textColor="@color/text_secondary"
+                android:layout_marginBottom="12dp" />
                 
             <EditText
                 android:id="@+id/et_test_contact"
@@ -175,22 +215,34 @@
                 android:layout_height="wrap_content"
                 android:hint="Test Contact Number"
                 android:inputType="phone"
-                android:layout_marginBottom="8dp" />
+                android:backgroundTint="@color/status_warning"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
+                android:layout_marginBottom="16dp" />
                 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_simulate_crash"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Simulate Crash"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                android:layout_height="54dp"
+                android:text="💥 SIMULATE CRASH"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                app:backgroundTint="#D32F2F"
+                app:cornerRadius="12dp"
+                style="@style/Widget.MaterialComponents.Button" />
                 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_inject_trace"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="54dp"
                 android:layout_marginTop="8dp"
-                android:text="Inject Sensor Trace"
-                style="@style/Widget.MaterialComponents.Button.TextButton" />
+                android:text="⚡ INJECT SENSOR TRACE"
+                android:textColor="@color/status_warning"
+                android:textStyle="bold"
+                app:strokeColor="@color/status_warning"
+                app:strokeWidth="2dp"
+                app:cornerRadius="12dp"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
@@ -199,9 +251,9 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="24dp"
-        android:layout_marginBottom="8dp"
+        android:layout_marginTop="16dp"
         android:fontFamily="sans-serif-medium"
-        android:text="@string/status_checking"
+        android:text="Verifying hardware..."
         android:textColor="@color/status_checking"
         android:textSize="14sp"
         app:layout_constraintEnd_toEndOf="parent"
@@ -216,24 +268,72 @@
         android:layout_marginTop="8dp"
         android:layout_marginBottom="8dp"
         android:clipToPadding="false"
-        android:paddingBottom="8dp"
-        app:layout_constraintBottom_toTopOf="@id/btn_refresh"
+        app:layout_constraintBottom_toTopOf="@id/card_live_logs"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tv_overall_status"
         tools:listitem="@layout/item_readiness" />
 
+    <!-- Terminal View -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/card_live_logs"
+        android:layout_width="0dp"
+        android:layout_height="140dp"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="16dp"
+        app:cardBackgroundColor="#000000"
+        app:cardCornerRadius="12dp"
+        app:strokeWidth="1dp"
+        app:strokeColor="#3300FF00"
+        app:layout_constraintBottom_toTopOf="@id/btn_refresh"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="[SECURE SYSTEM AUDIT TERMINAL]"
+                android:background="#1A00FF00"
+                android:textColor="#00FF00"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="4dp"/>
+
+            <ScrollView
+                android:id="@+id/sv_logs"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp">
+                <TextView
+                    android:id="@+id/tv_live_logs"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="11sp"
+                    android:lineSpacingExtra="2dp"
+                    android:textColor="#00FF00"
+                    android:text="> SYSTEM INITIALIZED\n> WAITING FOR EVENTS..." />
+            </ScrollView>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_refresh"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_height="54dp"
         android:layout_marginHorizontal="16dp"
         android:layout_marginBottom="24dp"
-        android:text="@string/btn_refresh"
+        android:text="REFRESH HARDWARE STATUS"
+        app:cornerRadius="12dp"
+        app:backgroundTint="#2C3140"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
-
-
