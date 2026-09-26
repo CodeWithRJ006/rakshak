@@ -1,7 +1,7 @@
 package com.rakshak.core.alert
 
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,21 +23,21 @@ class AlertSenderTest {
         }
     }
 
-    class MockLocationController(val delayMillis: Long = 0, val returnLocation: Boolean = true) : LocationController {
-        var callCount = 0
-        override suspend fun getLocation(): LocationData? {
-            callCount++
-            if (delayMillis > 0) {
-                delay(delayMillis)
-            }
-            return if (returnLocation) LocationData(37.422, -122.084) else null
+    class MockLocationController : LocationController {
+        var deferred = CompletableDeferred<LocationData?>()
+        
+        override fun getLocationAsync(): Deferred<LocationData?> {
+            return deferred
         }
     }
 
     @Test
-    fun testRealModeSendsSmsWithExactMessageBody() = runBlocking {
+    fun testRealModeSendsSmsWithExactMessageBodyWhenLocationImmediate() {
         val sms = MockSmsController()
         val loc = MockLocationController()
+        // Provide immediate location
+        loc.deferred.complete(LocationData(37.422, -122.084))
+        
         val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"))
 
         val result = sender.sendEmergencyAlert()
@@ -47,9 +47,11 @@ class AlertSenderTest {
     }
 
     @Test
-    fun testDemoModeNeverInvokesRealSmsManager() = runBlocking {
+    fun testDemoModeNeverInvokesRealSmsManager() {
         val sms = MockSmsController()
         val loc = MockLocationController()
+        loc.deferred.complete(LocationData(37.422, -122.084))
+        
         val sender = AlertSender(AlertMode.DEMO_MODE, sms, loc, listOf("1234567890"))
 
         val result = sender.sendEmergencyAlert()
@@ -63,9 +65,10 @@ class AlertSenderTest {
     }
 
     @Test
-    fun testDemoModeWithPermissionDeniedStillReturnsAlertSent() = runBlocking {
+    fun testDemoModeWithPermissionDeniedStillReturnsAlertSent() {
         val sms = MockSmsController().apply { permission = false }
         val loc = MockLocationController()
+        loc.deferred.complete(LocationData(37.422, -122.084))
         
         // Demo mode ignores the missing permission
         val senderDemo = AlertSender(AlertMode.DEMO_MODE, sms, loc, listOf("1234567890"))
@@ -75,9 +78,10 @@ class AlertSenderTest {
     }
 
     @Test
-    fun testRealModeMissingPermissionFailsGracefully() = runBlocking {
+    fun testRealModeMissingPermissionFailsGracefully() {
         val sms = MockSmsController().apply { permission = false }
         val loc = MockLocationController()
+        loc.deferred.complete(LocationData(37.422, -122.084))
         
         // Real mode fails
         val senderReal = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"))
@@ -86,9 +90,11 @@ class AlertSenderTest {
     }
 
     @Test
-    fun testUnavailableLocationSendsSmsWithFallbackText() = runBlocking {
+    fun testUnavailableLocationSendsSmsWithFallbackText() {
         val sms = MockSmsController()
-        val loc = MockLocationController(returnLocation = false)
+        val loc = MockLocationController()
+        // Provide immediate NULL location
+        loc.deferred.complete(null)
         val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"))
 
         val result = sender.sendEmergencyAlert()
@@ -98,9 +104,11 @@ class AlertSenderTest {
     }
 
     @Test
-    fun testUnavailableCellularServiceFailsGracefully() = runBlocking {
+    fun testUnavailableCellularServiceFailsGracefully() {
         val sms = MockSmsController().apply { service = false }
         val loc = MockLocationController()
+        loc.deferred.complete(null)
+        
         val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"))
 
         val result = sender.sendEmergencyAlert()
@@ -109,9 +117,10 @@ class AlertSenderTest {
     }
 
     @Test
-    fun testRepeatedCallsDoNotCrash() = runBlocking {
+    fun testRepeatedCallsDoNotCrash() {
         val sms = MockSmsController()
         val loc = MockLocationController()
+        loc.deferred.complete(null)
         val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"))
 
         assertEquals(AlertResult.ALERT_SENT, sender.sendEmergencyAlert())
@@ -121,30 +130,33 @@ class AlertSenderTest {
     }
 
     @Test
-    fun testGpsTimeoutDoesNotBlockIndefinitely() = runBlocking {
+    fun testSlowLocationControllerMustNotDelaySms() {
         val sms = MockSmsController()
-        // Delay is longer than timeout
-        val loc = MockLocationController(delayMillis = 5000L)
-        // Set a short timeout 500ms
-        val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"), locationTimeoutMillis = 500L)
+        val loc = MockLocationController()
+        // DO NOT COMPLETE the deferred location! It is simulating a "slow" network/GPS call.
+        
+        val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("1234567890"))
 
-        val startTime = System.currentTimeMillis()
+        // Execution happens instantly because AlertSender doesn't block on incomplete Deferred.
         val result = sender.sendEmergencyAlert()
-        val duration = System.currentTimeMillis() - startTime
-
-        // Even though location timed out, SMS is sent
+        
+        // Result is sent, SMS count is 1.
         assertEquals(AlertResult.ALERT_SENT, result)
         assertEquals(1, sms.sendCount)
         assertEquals("SOS! A crash has been detected. Location unavailable", sms.messagesSent[0])
         
-        // Ensure it broke out via withTimeoutOrNull near 500ms (allow some padding)
-        assertTrue("Duration was " + duration, duration < 2000L)
+        // Even if location finishes LATER, SMS was already sent promptly.
+        loc.deferred.complete(LocationData(37.422, -122.084))
+        
+        // Prove it actually didn't block and SMS was sent first.
+        assertTrue(sms.sendCount == 1)
     }
 
     @Test
-    fun testMultipleEmergencyContactsBehaveCorrectly() = runBlocking {
+    fun testMultipleEmergencyContactsBehaveCorrectly() {
         val sms = MockSmsController()
-        val loc = MockLocationController(returnLocation = false)
+        val loc = MockLocationController()
+        loc.deferred.complete(null)
         val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, listOf("111", "222", "333"))
 
         val result = sender.sendEmergencyAlert()
@@ -153,9 +165,10 @@ class AlertSenderTest {
     }
 
     @Test
-    fun testEmptyEmergencyContactsIsHandledSafely() = runBlocking {
+    fun testEmptyEmergencyContactsIsHandledSafely() {
         val sms = MockSmsController()
         val loc = MockLocationController()
+        loc.deferred.complete(null)
         val sender = AlertSender(AlertMode.REAL_MODE, sms, loc, emptyList())
 
         val result = sender.sendEmergencyAlert()

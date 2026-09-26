@@ -1,6 +1,6 @@
 package com.rakshak.core.alert
 
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Deferred
 
 enum class AlertMode {
     REAL_MODE,
@@ -24,16 +24,16 @@ interface SmsController {
 }
 
 interface LocationController {
-    // The controller itself should try to be fast, but we wrap it in withTimeoutOrNull anyway
-    suspend fun getLocation(): LocationData?
+    // Starts location fetch and returns a Deferred. 
+    // If it can resolve cached location immediately, it returns a completed Deferred.
+    fun getLocationAsync(): Deferred<LocationData?>
 }
 
 class AlertSender(
     private val mode: AlertMode,
     private val smsController: SmsController,
     private val locationController: LocationController,
-    private val emergencyContacts: List<String>,
-    private val locationTimeoutMillis: Long = 3000L
+    private val emergencyContacts: List<String>
 ) {
     val demoLogs = mutableListOf<DemoLog>()
 
@@ -44,7 +44,7 @@ class AlertSender(
         val alertResult: AlertResult
     )
 
-    suspend fun sendEmergencyAlert(): AlertResult {
+    fun sendEmergencyAlert(): AlertResult {
         if (emergencyContacts.isEmpty()) {
             return AlertResult.ALERT_FAILED_NO_CONTACTS
         }
@@ -58,12 +58,17 @@ class AlertSender(
             }
         }
 
-        // Bounded wait for location. SMS is higher priority, so we do not wait indefinitely.
-        val location = try {
-            withTimeoutOrNull(locationTimeoutMillis) {
-                locationController.getLocation()
+        // 1. Start or retrieve the location fetch
+        val locationDeferred = locationController.getLocationAsync()
+        
+        // 2. Use it ONLY if it is immediately available (non-blocking)
+        val location = if (locationDeferred.isCompleted) {
+            try {
+                locationDeferred.getCompleted()
+            } catch (e: Exception) {
+                null
             }
-        } catch (e: Exception) {
+        } else {
             null
         }
         
@@ -77,11 +82,13 @@ class AlertSender(
         
         val message = "SOS! A crash has been detected. " + locationText
 
+        // 3. Demo mode logging
         if (mode == AlertMode.DEMO_MODE) {
             logDemo(AlertResult.ALERT_SENT, locationStatus, message)
             return AlertResult.ALERT_SENT
         }
 
+        // 4. Send SMS immediately
         var successCount = 0
         for (contact in emergencyContacts) {
             val sent = smsController.sendSms(contact, message)
