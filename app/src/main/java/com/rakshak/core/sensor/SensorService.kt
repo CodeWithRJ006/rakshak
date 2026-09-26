@@ -4,6 +4,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -43,7 +45,8 @@ class SensorService : Service(), SensorEventListener {
     private var isListening = false
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    private val detector = CrashDetector()
+        private val detector = CrashDetector()
+    private var tts: TextToSpeech? = null
     lateinit var smsController: SmsController
     lateinit var locationController: LocationController
 
@@ -67,6 +70,22 @@ class SensorService : Service(), SensorEventListener {
             }
         }
 
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.US
+            }
+        }
+        
+        serviceScope.launch {
+            detector.stateFlow.collect { state ->
+                if (state == com.rakshak.core.detector.DetectorState.CONFIRMING) {
+                    tts?.speak("Crash candidate detected. Verifying...", TextToSpeech.QUEUE_FLUSH, null, null)
+                } else if (state == com.rakshak.core.detector.DetectorState.CONFIRMED) {
+                    tts?.speak("Emergency confirmed. Rakshak is sending an SOS to your contacts.", TextToSpeech.QUEUE_FLUSH, null, null)
+                }
+            }
+        }
+
         val pipeline = P0Pipeline(detector, smsController, locationController, { listOf(TestContactConfig.testContactNumber) }, HMACIncidentLogger(this))
         serviceScope.launch {
             pipeline.collectStateFlow()
@@ -74,8 +93,10 @@ class SensorService : Service(), SensorEventListener {
     }
 
         override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_SIMULATE_CRASH) {
-            detector.triggerExternalIncident(System.nanoTime())
+                when (intent?.action) {
+            ACTION_SIMULATE_CRASH -> detector.triggerExternalIncident(System.nanoTime())
+            ACTION_INJECT_TRACE_FRONTAL -> injectSyntheticTrace("FRONTAL")
+            ACTION_INJECT_TRACE_EJECTION -> injectSyntheticTrace("EJECTION")
         }
         startForegroundSpecialUse()
         
@@ -97,36 +118,40 @@ class SensorService : Service(), SensorEventListener {
         return START_STICKY
     }
 
-    private fun injectSyntheticTrace() {
+        private fun injectSyntheticTrace(type: String) {
         serviceScope.launch {
             val t0 = System.nanoTime()
             val accelTrace = mutableListOf<SensorData>()
             val gyroTrace = mutableListOf<SensorData>()
 
-            // 1. Normal monitoring
             accelTrace.add(SensorData(t0, floatArrayOf(0f, 9.8f, 0f)))
             gyroTrace.add(SensorData(t0, floatArrayOf(0.1f, 0.1f, 0.1f)))
             
-            // 2. Huge impact (magnitude ~40 > 30 threshold)
-            val t1 = t0 + 100_000_000L // +100ms
-            accelTrace.add(SensorData(t1, floatArrayOf(40f, 0f, 0f)))
+            val t1 = t0 + 100_000_000L 
+            val t2 = t1 + 100_000_000L 
             
-            // 3. High Jerk and Gyro corroboration (magnitude > 4.0 threshold)
-            val t2 = t1 + 100_000_000L // +100ms inside candidate window
-            accelTrace.add(SensorData(t2, floatArrayOf(80f, 0f, 0f)))
-            gyroTrace.add(SensorData(t2, floatArrayOf(5f, 5f, 5f)))
+            if (type == "FRONTAL") {
+                // High deceleration in Y/Z, low initial gyro (hit a wall)
+                accelTrace.add(SensorData(t1, floatArrayOf(0f, 60f, -40f)))
+                accelTrace.add(SensorData(t2, floatArrayOf(0f, 80f, -60f)))
+                gyroTrace.add(SensorData(t2, floatArrayOf(1f, 0.5f, 2f)))
+            } else {
+                // Ejection: Chaotic acceleration, massive gyro spin
+                accelTrace.add(SensorData(t1, floatArrayOf(50f, -30f, 40f)))
+                accelTrace.add(SensorData(t2, floatArrayOf(70f, -50f, 60f)))
+                gyroTrace.add(SensorData(t2, floatArrayOf(12f, -8f, 15f)))
+            }
 
-            // 4. Persistence Window (resting for >2 seconds)
             var t = t2
             while (t - t2 <= 2_500_000_000L) {
                 t += 100_000_000L
                 accelTrace.add(SensorData(t, floatArrayOf(0f, 9.8f, 0f)))
             }
-
-            // Push trace to the detector
             detector.processSensorBuffers(accelTrace, gyroTrace)
         }
     }
+
+
 
     private fun startForegroundSpecialUse() {
         val channelId = "rakshak_sensor_channel"
@@ -191,9 +216,13 @@ class SensorService : Service(), SensorEventListener {
         private const val TAG = "SensorService"
         private const val NOTIFICATION_ID = 1001
         const val ACTION_SIMULATE_CRASH = "com.rakshak.action.SIMULATE_CRASH"
-        const val ACTION_INJECT_TRACE = "com.rakshak.action.INJECT_TRACE"
+                const val ACTION_INJECT_TRACE_FRONTAL = "com.rakshak.action.INJECT_TRACE_FRONTAL"
+        const val ACTION_INJECT_TRACE_EJECTION = "com.rakshak.action.INJECT_TRACE_EJECTION"
     }
 }
+
+
+
 
 
 
