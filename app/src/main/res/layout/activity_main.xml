@@ -231,8 +231,33 @@
                 app:cornerRadius="12dp"
                 style="@style/Widget.MaterialComponents.Button" />
                 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_inject_trace"
+                        <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp">
+                
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_inject_frontal"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="Test: Frontal"
+                    style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_inject_ejection"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:text="Test: Ejection"
+                    style="@style/Widget.MaterialComponents.Button.TextButton" />
+            </LinearLayout>
+            
+                        <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_why_alert"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
                 android:layout_marginTop="8dp"
