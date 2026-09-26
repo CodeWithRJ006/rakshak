@@ -11,6 +11,8 @@
 
     <!-- Location: Attach GPS coordinates to incident report (P0) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- Phone state: Detect cellular service availability (P0 readiness check) -->
@@ -50,6 +52,14 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Rakshak">
+        <service
+            android:name=".core.sensor.SensorService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="crash_detection" />
+        </service>
 
         <!-- MainActivity: System Readiness screen + mode switch -->
         <activity

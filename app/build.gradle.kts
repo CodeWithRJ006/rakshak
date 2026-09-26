@@ -75,6 +75,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     // Unit Tests
+    testImplementation(libs.robolectric)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 
