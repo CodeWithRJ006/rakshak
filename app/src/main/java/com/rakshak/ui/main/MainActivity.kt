@@ -12,6 +12,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -45,7 +47,8 @@ class MainActivity : ComponentActivity() {
         Manifest.permission.SEND_SMS,
         Manifest.permission.ACCESS_FINE_LOCATION,
         Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.CAMERA
+        Manifest.permission.CAMERA,
+        Manifest.permission.RECORD_AUDIO
     )
 
     private val permissionLauncher = registerForActivityResult(
@@ -100,6 +103,7 @@ fun HomeScreen(viewModel: MainViewModel) {
     val detectorState by viewModel.detectorState.collectAsState()
     val isServiceRunning by viewModel.isServiceRunning.collectAsState()
     val lastTelemetry by viewModel.lastTelemetry.collectAsState()
+    val capturedImage by viewModel.capturedImage.collectAsState()
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -162,7 +166,7 @@ fun HomeScreen(viewModel: MainViewModel) {
             visible = isVisible,
             enter = fadeIn(tween(600, delayMillis = 200)) + slideInVertically(initialOffsetY = { 50 }, animationSpec = tween(600, delayMillis = 200))
         ) {
-            AiCopilotCard(aiState, aiResultText, detectorState.name)
+            AiCopilotCard(aiState, aiResultText, detectorState.name, capturedImage)
         }
 
         // Test Controls
@@ -220,6 +224,15 @@ fun HomeScreen(viewModel: MainViewModel) {
                                 Text("📸 CAM VERIFY", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
+                        
+                        Button(
+                            onClick = { viewModel.startVoiceCopilot() },
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("🎤 VOICE COPILOT", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -246,7 +259,7 @@ fun StatusBadge(text: String, color: Color) {
 }
 
 @Composable
-fun AiCopilotCard(aiState: AiState, aiResultText: String, detectorState: String) {
+fun AiCopilotCard(aiState: AiState, aiResultText: String, detectorState: String, capturedImage: android.graphics.Bitmap?) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp),
@@ -304,6 +317,16 @@ fun AiCopilotCard(aiState: AiState, aiResultText: String, detectorState: String)
                     fontSize = 11.sp,
                     lineHeight = 16.sp
                 )
+                
+                if (capturedImage != null && aiState == AiState.READY) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Image(
+                        bitmap = capturedImage.asImageBitmap(),
+                        contentDescription = "Camera Verification",
+                        modifier = Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(8.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
             }
         }
     }

@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- ================================================================== -->
     <!-- P0 PERMISSIONS — Required for the safety-critical alert pipeline    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- ================================================================== -->
 
     <!-- SMS: Send emergency alert to emergency contact (P0 - HIGHEST priority) -->
@@ -20,8 +26,14 @@
 
     <!-- Sensors: Accelerometer + gyroscope are software sensors; no manifest entry needed -->
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- ================================================================== -->
     <!-- P1 PERMISSIONS — Camera / Audio enrichment; failures don't block P0 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- ================================================================== -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -33,9 +45,15 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- ================================================================== -->
     <!-- HARDWARE FEATURES — declared as not required so non-sensor devices  -->
     <!-- can still install (graceful degradation; sensors checked at runtime) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- ================================================================== -->
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
@@ -51,6 +69,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Rakshak">
         <service
             android:name=".core.sensor.SensorService"

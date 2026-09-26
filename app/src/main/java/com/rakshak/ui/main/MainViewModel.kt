@@ -19,6 +19,11 @@ import kotlinx.coroutines.launch
 import android.content.Intent
 import androidx.core.content.ContextCompat
 
+import android.graphics.Bitmap
+import com.rakshak.core.ai.VoiceCopilot
+import com.rakshak.core.network.P0Pipeline
+import com.rakshak.core.summary.SummaryGenerator
+
 enum class AiState {
     IDLE, ANALYZING, READY, FAILED
 }
@@ -53,10 +58,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _aiResultText = MutableStateFlow("")
     val aiResultText: StateFlow<String> = _aiResultText
 
+    private val _capturedImage = MutableStateFlow<Bitmap?>(null)
+    val capturedImage: StateFlow<Bitmap?> = _capturedImage
+
     private val _isModelLoaded = MutableStateFlow(false)
     val isModelLoaded: StateFlow<Boolean> = _isModelLoaded
 
+    private var voiceCopilot: VoiceCopilot? = null
+
     init {
+        voiceCopilot = VoiceCopilot(application.applicationContext) { result ->
+            handleVoiceResult(result)
+        }
+        
         refresh()
         viewModelScope.launch {
             AIIncidentAssessment.initialize(application.applicationContext)
@@ -101,6 +115,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             _aiResultText.value = result
             _aiState.value = AiState.READY
+            
+            // Post to dashboard via P0Pipeline
+            val summary = SummaryGenerator.generateSummary(tel.peakGForce, tel.jerkGs, tel.gyroRadS, tel.locationStatus, "ALERT_SENT", "Impact Detected")
+            P0Pipeline.postIncidentToDashboard(tel.peakGForce, tel.jerkGs, tel.gyroRadS, tel.locationStatus, "dummy_hash_frontal", summary)
         }
     }
 
@@ -127,6 +145,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             _aiResultText.value = result
             _aiState.value = AiState.READY
+            
+            // Post to dashboard via P0Pipeline
+            val summary = SummaryGenerator.generateSummary(tel.peakGForce, tel.jerkGs, tel.gyroRadS, tel.locationStatus, "ALERT_SENT", "Ejection Detected")
+            P0Pipeline.postIncidentToDashboard(tel.peakGForce, tel.jerkGs, tel.gyroRadS, tel.locationStatus, "dummy_hash_ejection", summary)
         }
     }
 
@@ -142,6 +164,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun verifyWithCamera(bitmap: android.graphics.Bitmap?) {
+        if (bitmap != null) {
+            _capturedImage.value = bitmap
+        }
         val tel = _lastTelemetry.value ?: TelemetryState(10f, 500f, 10f)
         viewModelScope.launch {
             _aiState.value = AiState.ANALYZING
@@ -150,6 +175,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _aiResultText.value = assessment
             _aiState.value = AiState.READY
         }
+    }
+
+    // Voice Copilot
+    fun startVoiceCopilot() {
+        _aiState.value = AiState.ANALYZING
+        _aiResultText.value = "> LISTENING..."
+        voiceCopilot?.startListening()
+    }
+
+    private fun handleVoiceResult(transcription: String) {
+        if (transcription.startsWith("Error:")) {
+            _aiResultText.value = "> VOICE FAILED: $transcription"
+            _aiState.value = AiState.READY
+            return
+        }
+
+        _aiResultText.value = "> RIDER ASKED: \"$transcription\"\n> RUNNING VOICE INFERENCE..."
+        
+        val tel = _lastTelemetry.value ?: TelemetryState()
+        viewModelScope.launch {
+            val response = AIIncidentAssessment.answerVoiceQuery(transcription, tel.peakGForce, tel.jerkGs, tel.gyroRadS)
+            _aiResultText.value = "> RIDER: \"$transcription\"\n> COPILOT: $response"
+            _aiState.value = AiState.READY
+            voiceCopilot?.speak(response)
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        voiceCopilot?.destroy()
     }
 
     companion object {

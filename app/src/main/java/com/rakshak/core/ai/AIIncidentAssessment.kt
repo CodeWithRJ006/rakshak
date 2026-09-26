@@ -125,10 +125,44 @@ object AIIncidentAssessment {
                "Context: Correlated with the ${peakGForce}G / ${gyroRadS}rad/s telemetry, this visual evidence drastically increases the confidence of a severe collision. Priority 0 dispatch verified."
     }
 
+    suspend fun answerVoiceQuery(query: String, peakGForce: Float, jerkGs: Float, gyroRadS: Float): String = withContext(Dispatchers.IO) {
+        if (!isModelLoaded || llmInference == null) {
+            return@withContext "I am operating in fallback mode. The rider experienced ${peakGForce}G of force. Please dispatch medical assistance immediately."
+        }
+        try {
+            val userPrompt = """
+                [VOICE COPILOT INQUIRY]
+                Telemetry context: $peakGForce G, $jerkGs G/s, $gyroRadS rad/s.
+                User asked: "$query"
+                Answer in 1 or 2 concise, spoken-word sentences using the provided telemetry.
+            """.trimIndent()
+            
+            val fullPrompt = GroundingContext.buildSystemPrompt() + "\n\n" + userPrompt
+            val response = withTimeoutOrNull(8000L) {
+                llmInference?.generateResponse(fullPrompt)
+            }
+            if (response.isNullOrBlank()) {
+                return@withContext "I am analyzing the telemetry, but cannot verify details at this time. Telemetry reads $peakGForce Gs."
+            }
+            return@withContext response.trim().replace(Regex("\\[.*?\\]"), "") // Clean up brackets for speech
+        } catch (e: Exception) {
+            return@withContext "I encountered an error. Proceed with standard emergency protocol."
+        }
+    }
+
     private fun generateFallback(peakGForce: Float, jerkGs: Float, gyroRadS: Float): String {
-        return "[FALLBACK ASSESSMENT]\n" +
-               "MEASURED EVIDENCE: Peak $peakGForce G, Jerk $jerkGs G/s, Rotational Velocity $gyroRadS rad/s.\n" +
-               "INTERPRETATION: Deterministic thresholds exceeded. Likely moderate-to-severe impact event.\n" +
-               "UNCERTAINTY: Telemetry suggests collision, but clinical severity cannot be AI-verified at this time."
+        val isEjection = jerkGs > 1000f && gyroRadS > 20f
+        
+        if (isEjection) {
+            return "[FALLBACK ASSESSMENT]\n" +
+                   "MEASURED EVIDENCE: Peak $peakGForce G, Jerk $jerkGs G/s, Rotational Velocity $gyroRadS rad/s.\n" +
+                   "INTERPRETATION: Critical Ejection Profile Matched. Extreme Jerk implies rider separation.\n" +
+                   "UNCERTAINTY: Telemetry strongly suggests high-side ejection. Awaiting medical verification."
+        } else {
+            return "[FALLBACK ASSESSMENT]\n" +
+                   "MEASURED EVIDENCE: Peak $peakGForce G, Jerk $jerkGs G/s, Rotational Velocity $gyroRadS rad/s.\n" +
+                   "INTERPRETATION: Severe Frontal Collision Matched. High G-Force implies sudden stop.\n" +
+                   "UNCERTAINTY: Collision likely, but severity requires visual or clinical corroboration."
+        }
     }
 }
