@@ -9,7 +9,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 import android.graphics.Bitmap
-import kotlinx.coroutines.delay
 
 object AIIncidentAssessment {
     private const val TAG = "AIIncidentAssessment"
@@ -112,14 +111,71 @@ object AIIncidentAssessment {
         }
     }
 
+    /**
+     * Tier 2: Real camera verification path.
+     *
+     * MediaPipe LlmInference (tasks-genai) is TEXT-ONLY — it does NOT accept image
+     * tensors as input.  We capture a real CameraX frame (see CameraCaptureHelper)
+     * and describe its metadata (resolution, timestamp) alongside the telemetry in
+     * the text prompt.  The output is clearly labelled so no one confuses it with
+     * sensor-level measurements.
+     *
+     * If image input ever becomes supported by the model/config, switch to the
+     * multimodal path here.
+     */
     suspend fun verifyWithCamera(peakGForce: Float, jerkGs: Float, gyroRadS: Float, image: Bitmap?): String = withContext(Dispatchers.IO) {
-        delay(800) // Brief frame processing time
-        
-        val visualContext = if (image != null) "Real-time Camera Frame captured (${image.width}x${image.height}). Staged as scene evidence." else "Camera frame unavailable."
-        
-        return@withContext "[SCENE EVIDENCE CAPTURED]\n" +
-               visualContext + "\n" +
-               "Context: Correlated with ${peakGForce}G impact / ${gyroRadS}rad/s rotation. Telemetry and visual payload staged for emergency triage."
+        val frameDescription = if (image != null) {
+            "CameraX frame captured: ${image.width}x${image.height}px at ${System.currentTimeMillis()}ms"
+        } else {
+            "Camera frame unavailable — capture failed or permission denied"
+        }
+
+        // Attempt real Gemma inference with text context
+        if (isModelLoaded && llmInference != null && image != null) {
+            try {
+                val prompt = """
+                    [AI OBSERVATION (visual context — TEXT-ONLY ANALYSIS)]
+                    NOTE: Image input is not supported by the current model configuration.
+                    This analysis is based on telemetry and frame metadata only, NOT pixel-level visual inspection.
+
+                    Frame metadata: $frameDescription
+                    Telemetry: Peak ${peakGForce}G, Jerk $jerkGs G/s, Gyro $gyroRadS rad/s.
+
+                    Based on these readings, provide a 2-sentence assessment of the likely scene.
+                    Always prefix your answer with "AI OBSERVATION (visual):".
+                """.trimIndent()
+
+                val fullPrompt = GroundingContext.buildSystemPrompt() + "\n\n" + prompt
+
+                val response = withTimeoutOrNull(5000L) {
+                    llmInference?.generateResponse(fullPrompt)
+                }
+
+                if (!response.isNullOrBlank()) {
+                    // Ensure the label is always present even if model forgets
+                    val labeled = if (response.contains("AI OBSERVATION")) response.trim()
+                                  else "AI OBSERVATION (visual): ${response.trim()}"
+                    return@withContext "[CAMERA EVIDENCE STAGED]\n$frameDescription\n\n$labeled\n\n⚠ This is an AI interpretation, not a sensor measurement."
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "LLM camera verification failed", e)
+            }
+        }
+
+        // Deterministic fallback — clearly labeled
+        val severityLabel = when {
+            peakGForce > 10f && gyroRadS > 15f -> "CRITICAL (Ejection Profile)"
+            peakGForce > 8f -> "SEVERE (High-G Impact)"
+            peakGForce > 3f -> "MODERATE (Significant Force)"
+            else -> "LOW (Minor Event)"
+        }
+
+        return@withContext "[CAMERA EVIDENCE STAGED]\n" +
+               "$frameDescription\n\n" +
+               "AI OBSERVATION (visual): Image input not supported by current model. " +
+               "TEXT-ONLY ANALYSIS based on telemetry: $severityLabel. " +
+               "Peak ${peakGForce}G with ${gyroRadS}rad/s rotation.\n\n" +
+               "⚠ This is an AI interpretation, not a sensor measurement."
     }
 
     suspend fun answerVoiceQuery(query: String, peakGForce: Float, jerkGs: Float, gyroRadS: Float): String = withContext(Dispatchers.IO) {
