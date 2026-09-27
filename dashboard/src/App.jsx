@@ -47,29 +47,63 @@ function App() {
 
   if (status === 'WAITING_FOR_PHONE' || !incidentData) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#222', color: '#fff' }}>
-        <h1>WAITING FOR PHONE</h1>
+      <div className="waiting-container">
+        <div className="pulse-ring"></div>
+        <h1 className="waiting-text">WAITING FOR PHONE</h1>
+        <p className="waiting-subtext">Listening for Rakshak telemetry on port 3001...</p>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '600px', margin: '0 auto' }}>
-      <h1>Rakshak Incident Dashboard</h1>
-      <div style={{ background: '#f5f5f5', padding: '20px', borderRadius: '8px' }}>
-        <p><strong>Timestamp:</strong> {new Date(incidentData.timestamp).toLocaleString()}</p>
-        <p><strong>Location:</strong> {incidentData.location}</p>
-        <p><strong>Alert Status:</strong> {incidentData.alertStatus}</p>
-        <p><strong>Movement Result:</strong> {incidentData.movementResult}</p>
-        <p><strong>Summary:</strong> {incidentData.summary}</p>
-        <p><strong>Chain Integrity:</strong> {incidentData.chainIntegrity}</p>
+    <div className="dashboard-container">
+      <header className="dashboard-header">
+        <div>
+          <h1 className="brand-title">RAKSHAK</h1>
+          <p className="brand-subtitle">INCIDENT COMMAND CENTER</p>
+        </div>
+        <div className="status-badge connected">
+          <span className="dot"></span> TELEMETRY ACTIVE
+        </div>
+      </header>
+
+      <div className="dashboard-grid">
+        <div className="card glass-card hero-card">
+          <div className="card-header">
+            <h2>AI INCIDENT SUMMARY</h2>
+            <button onClick={exportPDF} className="export-btn">EXPORT PDF</button>
+          </div>
+          <div className="terminal-box">
+            <p className="terminal-text">{incidentData.summary}</p>
+          </div>
+        </div>
+
+        <div className="card glass-card details-card">
+          <h2>TELEMETRY DETAILS</h2>
+          <ul className="details-list">
+            <li>
+              <span className="label">TIMESTAMP</span>
+              <span className="value">{new Date(incidentData.timestamp).toLocaleString()}</span>
+            </li>
+            <li>
+              <span className="label">LOCATION</span>
+              <span className="value">{incidentData.location}</span>
+            </li>
+            <li>
+              <span className="label">ALERT STATUS</span>
+              <span className="value status-value">{incidentData.alertStatus}</span>
+            </li>
+            <li>
+              <span className="label">MOVEMENT</span>
+              <span className="value">{incidentData.movementResult}</span>
+            </li>
+            <li>
+              <span className="label">INTEGRITY</span>
+              <span className="value hash-value">{incidentData.chainIntegrity.substring(0, 16)}...</span>
+            </li>
+          </ul>
+        </div>
       </div>
-      <button 
-        onClick={exportPDF} 
-        style={{ marginTop: '20px', padding: '10px 20px', fontSize: '16px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-      >
-        Export PDF
-      </button>
     </div>
   );
 }
