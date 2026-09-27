@@ -3,6 +3,9 @@ package com.rakshak.core.ai
 import android.content.Context
 import android.util.Log
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
+import com.google.mediapipe.tasks.genai.llminference.GraphOptions
+import com.google.mediapipe.framework.image.BitmapImageBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -130,35 +133,44 @@ object AIIncidentAssessment {
             "Camera frame unavailable — capture failed or permission denied"
         }
 
-        // Attempt real Gemma inference with text context
+        // Attempt real Gemma inference with vision context
         if (isModelLoaded && llmInference != null && image != null) {
             try {
-                val prompt = """
-                    [AI OBSERVATION (visual context — TEXT-ONLY ANALYSIS)]
-                    NOTE: Image input is not supported by the current model configuration.
-                    This analysis is based on telemetry and frame metadata only, NOT pixel-level visual inspection.
+                val mpImage = BitmapImageBuilder(image).build()
+                val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                    .setGraphOptions(GraphOptions.builder().setEnableVisionModality(true).build())
+                    .build()
+                val session = LlmInferenceSession.createFromOptions(llmInference, sessionOptions)
 
-                    Frame metadata: $frameDescription
-                    Telemetry: Peak ${peakGForce}G, Jerk $jerkGs G/s, Gyro $gyroRadS rad/s.
+                try {
+                    val prompt = """
+                        [AI OBSERVATION (visual context)]
+                        Frame metadata: $frameDescription
+                        Telemetry: Peak ${peakGForce}G, Jerk $jerkGs G/s, Gyro $gyroRadS rad/s.
 
-                    Based on these readings, provide a 2-sentence assessment of the likely scene.
-                    Always prefix your answer with "AI OBSERVATION (visual):".
-                """.trimIndent()
+                        Based on these readings AND the image provided, provide a 2-sentence assessment of the likely scene.
+                        Always prefix your answer with "AI OBSERVATION (visual):".
+                    """.trimIndent()
 
-                val fullPrompt = GroundingContext.buildSystemPrompt() + "\n\n" + prompt
+                    val fullPrompt = GroundingContext.buildSystemPrompt() + "\n\n" + prompt
 
-                val response = withTimeoutOrNull(5000L) {
-                    llmInference?.generateResponse(fullPrompt)
-                }
+                    session.addImage(mpImage)
+                    session.addQueryChunk(fullPrompt)
 
-                if (!response.isNullOrBlank()) {
-                    // Ensure the label is always present even if model forgets
-                    val labeled = if (response.contains("AI OBSERVATION")) response.trim()
-                                  else "AI OBSERVATION (visual): ${response.trim()}"
-                    return@withContext "[CAMERA EVIDENCE STAGED]\n$frameDescription\n\n$labeled\n\n⚠ This is an AI interpretation, not a sensor measurement."
+                    val response = withTimeoutOrNull(5000L) {
+                        session.generateResponse()
+                    }
+
+                    if (!response.isNullOrBlank()) {
+                        val labeled = if (response.contains("AI OBSERVATION")) response.trim()
+                                      else "AI OBSERVATION (visual): ${response.trim()}"
+                        return@withContext "[CAMERA EVIDENCE STAGED]\n$frameDescription\n\n$labeled\n\n⚠ This is an AI interpretation, not a sensor measurement."
+                    }
+                } finally {
+                    session.close()
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "LLM camera verification failed", e)
+                Log.e(TAG, "EnableVisionModality failed or initialization failed", e)
             }
         }
 
@@ -172,7 +184,7 @@ object AIIncidentAssessment {
 
         return@withContext "[CAMERA EVIDENCE STAGED]\n" +
                "$frameDescription\n\n" +
-               "AI OBSERVATION (visual): Image input not supported by current model. " +
+               "AI OBSERVATION (visual): visual analysis unavailable on this configuration. " +
                "TEXT-ONLY ANALYSIS based on telemetry: $severityLabel. " +
                "Peak ${peakGForce}G with ${gyroRadS}rad/s rotation.\n\n" +
                "⚠ This is an AI interpretation, not a sensor measurement."

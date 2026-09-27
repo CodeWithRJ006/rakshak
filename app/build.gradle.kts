@@ -94,7 +94,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     // MediaPipe GenAI (For On-Device LLM)
-    implementation("com.google.mediapipe:tasks-genai:0.10.14")
+    implementation("com.google.mediapipe:tasks-genai:0.10.27")
+    implementation("com.google.mediapipe:tasks-vision:0.10.14") // For BitmapImageBuilder
 
     // Unit Tests
     testImplementation(libs.robolectric)
