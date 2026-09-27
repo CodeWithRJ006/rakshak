@@ -71,7 +71,17 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color(0xFF0F1117)
                 ) {
-                    HomeScreen(viewModel)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        HomeScreen(viewModel)
+
+                        val seconds by viewModel.countdownSeconds.collectAsState()
+                        if (seconds != null) {
+                            EmergencyCountdownOverlay(
+                                secondsRemaining = seconds ?: 10,
+                                onCancel = { viewModel.cancelCountdownByRider() }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -104,6 +114,7 @@ fun HomeScreen(viewModel: MainViewModel) {
     val isServiceRunning by viewModel.isServiceRunning.collectAsState()
     val lastTelemetry by viewModel.lastTelemetry.collectAsState()
     val capturedImage by viewModel.capturedImage.collectAsState()
+    val countdownSeconds by viewModel.countdownSeconds.collectAsState()
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -327,6 +338,67 @@ fun AiCopilotCard(aiState: AiState, aiResultText: String, detectorState: String,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun EmergencyCountdownOverlay(secondsRemaining: Int, onCancel: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF8B0000).copy(alpha = 0.96f))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Text(
+                text = "ARE YOU OKAY?",
+                color = Color.White,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 2.sp
+            )
+            
+            Text(
+                text = "Incident detected. Emergency contacts will be notified automatically in:",
+                color = Color(0xFFFFCDD2),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+
+            Box(
+                modifier = Modifier
+                    .size(130.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .border(4.dp, Color(0xFFD32F2F), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "$secondsRemaining",
+                    color = Color(0xFFD32F2F),
+                    fontSize = 56.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onCancel,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text("I'M GOOD — CANCEL ALERT", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
         }
     }

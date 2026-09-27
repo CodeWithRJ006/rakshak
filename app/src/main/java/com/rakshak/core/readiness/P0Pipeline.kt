@@ -10,8 +10,11 @@ import com.rakshak.core.mode.AppMode
 import com.rakshak.core.mode.ModeManager
 import com.rakshak.core.summary.SummaryGenerator
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.rakshak.core.log.HMACIncidentLogger
 import org.json.JSONObject
@@ -19,21 +22,54 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import android.util.Log
+import java.util.concurrent.atomic.AtomicBoolean
 
 class P0Pipeline(
     private val detector: CrashDetector,
     private val smsController: SmsController,
     private val locationController: LocationController,
     private val contactProvider: () -> List<String>,
-    private val incidentLogger: HMACIncidentLogger? = null
+    private val incidentLogger: HMACIncidentLogger? = null,
+    dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
     var currentIncidentHandled = false
         private set
 
     var alertCount = 0
         private set
+
+    var countdownDurationMs: Long = 10_000L
         
-    private val pipelineScope = CoroutineScope(Dispatchers.Default)
+    private val pipelineScope = CoroutineScope(dispatcher)
+    private val isCancelledByRider = AtomicBoolean(false)
+    private var activeCountdownJob: Job? = null
+
+    @Synchronized
+    fun cancelByRider(): Boolean {
+        if (!isCancelledByRider.compareAndSet(false, true)) {
+            // Already cancelled or rapid double-tap — thread safe, zero crash
+            return false
+        }
+
+        activeCountdownJob?.cancel()
+        activeCountdownJob = null
+        P0PipelineStatus.updateCountdownSeconds(null)
+
+        com.rakshak.core.log.SystemEventLogger.log("RIDER", "Alert CANCELLED_BY_RIDER")
+
+        pipelineScope.launch {
+            val timestamp = System.currentTimeMillis()
+            val jsonObj = JSONObject().apply {
+                put("timestamp", timestamp)
+                put("alertStatus", "CANCELLED_BY_RIDER")
+                put("summary", "Incident cancelled by rider within emergency countdown window.")
+            }
+            incidentLogger?.logIncident(jsonObj.toString())
+        }
+
+        detector.cancelByRider()
+        return true
+    }
         
     suspend fun collectStateFlow() {
         detector.stateFlow.collectLatest { state ->
@@ -41,10 +77,31 @@ class P0Pipeline(
 
             if (state == DetectorState.MONITORING) {
                 currentIncidentHandled = false
+                P0PipelineStatus.updateCountdownSeconds(null)
             }
 
             if (state == DetectorState.CONFIRMED && !currentIncidentHandled) {
                 currentIncidentHandled = true
+                isCancelledByRider.set(false)
+
+                // 10-second Emergency Countdown UI window
+                if (countdownDurationMs > 0) {
+                    val countdownJob = pipelineScope.launch {
+                        val totalSeconds = (countdownDurationMs / 1000L).toInt().coerceAtLeast(1)
+                        for (sec in totalSeconds downTo 1) {
+                            P0PipelineStatus.updateCountdownSeconds(sec)
+                            delay(1000L)
+                        }
+                        P0PipelineStatus.updateCountdownSeconds(null)
+                    }
+                    activeCountdownJob = countdownJob
+                    countdownJob.join()
+                }
+
+                if (isCancelledByRider.get()) {
+                    Log.i("P0Pipeline", "Incident cancelled by rider. Halting alert dispatch.")
+                    return@collectLatest
+                }
                 
                 val mode = ModeManager.currentMode
                 val alertMode = if (mode is AppMode.REAL) AlertMode.REAL_MODE else AlertMode.DEMO_MODE
@@ -59,7 +116,7 @@ class P0Pipeline(
 
                     val timestamp = System.currentTimeMillis()
                     val alertStatus = result.name
-                    val movementResult = "POST_CRASH_STILLNESS" // Simulating movement result
+                    val movementResult = "POST_CRASH_STILLNESS"
                     
                     val summary = SummaryGenerator.generateSummary(
                         peakGs = 12.5f,
@@ -70,12 +127,13 @@ class P0Pipeline(
                         movementResult = movementResult
                     )
                     
-                    val jsonObj = JSONObject()
-                    jsonObj.put("timestamp", timestamp)
-                    jsonObj.put("location", locString)
-                    jsonObj.put("alertStatus", alertStatus)
-                    jsonObj.put("movementResult", movementResult)
-                    jsonObj.put("summary", summary)
+                    val jsonObj = JSONObject().apply {
+                        put("timestamp", timestamp)
+                        put("location", locString)
+                        put("alertStatus", alertStatus)
+                        put("movementResult", movementResult)
+                        put("summary", summary)
+                    }
                     
                     var chainIntegrity = "UNKNOWN"
                     if (incidentLogger != null) {
@@ -91,7 +149,6 @@ class P0Pipeline(
 
                     // POST to embedded server (laptop dashboard)
                     try {
-                        // Using your laptop's local IP for the loaner phone
                         val url = URL("http://192.168.1.100:3001/api/incident") 
                         val conn = url.openConnection() as HttpURLConnection
                         conn.requestMethod = "POST"

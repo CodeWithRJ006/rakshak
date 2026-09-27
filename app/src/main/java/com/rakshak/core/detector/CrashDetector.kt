@@ -47,6 +47,13 @@ class CrashDetector(
         }
     }
 
+    fun cancelByRider(timestamp: Long = System.nanoTime()) {
+        if (currentState == DetectorState.CONFIRMED || currentState == DetectorState.CONFIRMING || currentState == DetectorState.IMPACT_CANDIDATE) {
+            com.rakshak.core.log.SystemEventLogger.log("RIDER", "Alert cancelled by rider: CANCELLED_BY_RIDER")
+            transitionTo(DetectorState.MONITORING, timestamp)
+        }
+    }
+
     @Synchronized
     fun processSensorBuffers(accelBuffer: List<SensorData>, gyroBuffer: List<SensorData> = emptyList()) {
         if (accelBuffer.size < 2) return

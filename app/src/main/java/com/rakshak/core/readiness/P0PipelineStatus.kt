@@ -16,6 +16,9 @@ object P0PipelineStatus {
     private val _lastAlertResult = MutableStateFlow<AlertResult?>(null)
     val lastAlertResult: StateFlow<AlertResult?> = _lastAlertResult.asStateFlow()
 
+    private val _countdownSeconds = MutableStateFlow<Int?>(null)
+    val countdownSeconds: StateFlow<Int?> = _countdownSeconds.asStateFlow()
+
     fun updateServiceRunning(running: Boolean) {
         _isServiceRunning.value = running
     }
@@ -26,5 +29,9 @@ object P0PipelineStatus {
     
     fun updateLastAlertResult(result: AlertResult?) {
         _lastAlertResult.value = result
+    }
+
+    fun updateCountdownSeconds(seconds: Int?) {
+        _countdownSeconds.value = seconds
     }
 }

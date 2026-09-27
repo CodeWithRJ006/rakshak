@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import android.content.Intent
 import androidx.core.content.ContextCompat
-
 import android.graphics.Bitmap
 import com.rakshak.core.ai.VoiceCopilot
 import com.rakshak.core.network.P0Pipeline
@@ -45,6 +44,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isServiceRunning = P0PipelineStatus.isServiceRunning
     val detectorState = P0PipelineStatus.detectorState
     val lastAlertResult = P0PipelineStatus.lastAlertResult
+    val countdownSeconds = P0PipelineStatus.countdownSeconds
 
     // AI States
     data class TelemetryState(val peakGForce: Float = 0f, val jerkGs: Float = 0f, val gyroRadS: Float = 0f, val locationStatus: String = "unavailable")
@@ -163,7 +163,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun verifyWithCamera(bitmap: android.graphics.Bitmap?) {
+    fun verifyWithCamera(bitmap: Bitmap?) {
         if (bitmap != null) {
             _capturedImage.value = bitmap
         }
@@ -200,6 +200,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _aiState.value = AiState.READY
             voiceCopilot?.speak(response)
         }
+    }
+
+    fun cancelCountdownByRider() {
+        P0PipelineStatus.updateCountdownSeconds(null)
+        P0PipelineStatus.updateDetectorState(com.rakshak.core.detector.DetectorState.MONITORING)
+        com.rakshak.core.log.SystemEventLogger.log("RIDER", "Alert CANCELLED_BY_RIDER by rider tap")
     }
 
     override fun onCleared() {
