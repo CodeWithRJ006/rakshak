@@ -49,6 +49,7 @@ class SensorService : Service(), SensorEventListener {
     private var tts: TextToSpeech? = null
     lateinit var smsController: SmsController
     lateinit var locationController: LocationController
+    private var pipeline: P0Pipeline? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -86,17 +87,18 @@ class SensorService : Service(), SensorEventListener {
             }
         }
 
-        val pipeline = P0Pipeline(detector, smsController, locationController, { listOf(TestContactConfig.testContactNumber) }, HMACIncidentLogger(this))
+        pipeline = P0Pipeline(detector, smsController, locationController, { listOf(TestContactConfig.testContactNumber) }, HMACIncidentLogger(this))
         serviceScope.launch {
-            pipeline.collectStateFlow()
+            pipeline?.collectStateFlow()
         }
     }
 
         override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-                when (intent?.action) {
+        when (intent?.action) {
             ACTION_SIMULATE_CRASH -> detector.triggerExternalIncident(System.nanoTime())
             ACTION_INJECT_TRACE_FRONTAL -> injectSyntheticTrace("FRONTAL")
             ACTION_INJECT_TRACE_EJECTION -> injectSyntheticTrace("EJECTION")
+            ACTION_CANCEL_ALERT -> pipeline?.cancelByRider()
         }
         startForegroundSpecialUse()
         
@@ -218,6 +220,7 @@ class SensorService : Service(), SensorEventListener {
         const val ACTION_SIMULATE_CRASH = "com.rakshak.action.SIMULATE_CRASH"
                 const val ACTION_INJECT_TRACE_FRONTAL = "com.rakshak.action.INJECT_TRACE_FRONTAL"
         const val ACTION_INJECT_TRACE_EJECTION = "com.rakshak.action.INJECT_TRACE_EJECTION"
+        const val ACTION_CANCEL_ALERT = "com.rakshak.action.CANCEL_ALERT"
     }
 }
 

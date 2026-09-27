@@ -203,9 +203,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cancelCountdownByRider() {
+        val intent = Intent(getApplication(), SensorService::class.java).apply {
+            action = SensorService.ACTION_CANCEL_ALERT
+        }
+        getApplication<Application>().startService(intent)
+        
         P0PipelineStatus.updateCountdownSeconds(null)
         P0PipelineStatus.updateDetectorState(com.rakshak.core.detector.DetectorState.MONITORING)
-        com.rakshak.core.log.SystemEventLogger.log("RIDER", "Alert CANCELLED_BY_RIDER by rider tap")
     }
 
     override fun onCleared() {
