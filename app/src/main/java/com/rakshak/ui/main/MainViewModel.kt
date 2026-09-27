@@ -98,6 +98,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         ContextCompat.startForegroundService(getApplication(), intent)
 
+        // Trigger 10s Emergency Countdown UI window
+        viewModelScope.launch {
+            P0PipelineStatus.updateDetectorState(com.rakshak.core.detector.DetectorState.CONFIRMED)
+            for (sec in 10 downTo 1) {
+                if (P0PipelineStatus.detectorState.value == com.rakshak.core.detector.DetectorState.MONITORING) break
+                P0PipelineStatus.updateCountdownSeconds(sec)
+                delay(1000L)
+            }
+            if (P0PipelineStatus.detectorState.value != com.rakshak.core.detector.DetectorState.MONITORING) {
+                P0PipelineStatus.updateDetectorState(com.rakshak.core.detector.DetectorState.ALERTED)
+            }
+            P0PipelineStatus.updateCountdownSeconds(null)
+        }
+
         // Trigger AI in parallel
         viewModelScope.launch {
             _aiState.value = AiState.ANALYZING
@@ -127,6 +141,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             action = SensorService.ACTION_INJECT_TRACE_EJECTION
         }
         ContextCompat.startForegroundService(getApplication(), intent)
+
+        // Trigger 10s Emergency Countdown UI window
+        viewModelScope.launch {
+            P0PipelineStatus.updateDetectorState(com.rakshak.core.detector.DetectorState.CONFIRMED)
+            for (sec in 10 downTo 1) {
+                if (P0PipelineStatus.detectorState.value == com.rakshak.core.detector.DetectorState.MONITORING) break
+                P0PipelineStatus.updateCountdownSeconds(sec)
+                delay(1000L)
+            }
+            if (P0PipelineStatus.detectorState.value != com.rakshak.core.detector.DetectorState.MONITORING) {
+                P0PipelineStatus.updateDetectorState(com.rakshak.core.detector.DetectorState.ALERTED)
+            }
+            P0PipelineStatus.updateCountdownSeconds(null)
+        }
 
         // Trigger AI in parallel for ejection profile
         viewModelScope.launch {
