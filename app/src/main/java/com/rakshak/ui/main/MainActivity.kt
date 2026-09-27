@@ -309,7 +309,7 @@ fun AiCopilotCard(aiState: AiState, aiResultText: String, detectorState: String,
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.Black, RoundedCornerShape(8.dp))
