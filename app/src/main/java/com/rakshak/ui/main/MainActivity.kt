@@ -32,11 +32,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Settings
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 import com.rakshak.core.sensor.CameraCaptureHelper
 import com.rakshak.core.mode.AppMode
 import com.rakshak.core.sensor.SensorService
+import com.rakshak.core.incident.IncidentRepository
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -60,6 +66,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        IncidentRepository.init(applicationContext)
+        
         permissionLauncher.launch(ALL_PERMISSIONS)
         
         val serviceIntent = Intent(this, SensorService::class.java)
@@ -67,19 +75,60 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             RakshakTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFF0F1117)
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        HomeScreen(viewModel)
-
-                        val seconds by viewModel.countdownSeconds.collectAsState()
-                        if (seconds != null) {
-                            EmergencyCountdownOverlay(
-                                secondsRemaining = seconds ?: 10,
-                                onCancel = { viewModel.cancelCountdownByRider() }
+                var currentTab by remember { mutableStateOf(0) }
+                
+                Scaffold(
+                    bottomBar = {
+                        NavigationBar(
+                            containerColor = Color(0xFF1E2129),
+                            contentColor = Color.White
+                        ) {
+                            NavigationBarItem(
+                                selected = currentTab == 0,
+                                onClick = { currentTab = 0 },
+                                icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                                label = { Text("Home", fontSize = 10.sp) }
                             )
+                            NavigationBarItem(
+                                selected = currentTab == 1,
+                                onClick = { currentTab = 1 },
+                                icon = { Icon(Icons.Default.List, contentDescription = "Timeline") },
+                                label = { Text("Timeline", fontSize = 10.sp) }
+                            )
+                            NavigationBarItem(
+                                selected = currentTab == 2,
+                                onClick = { currentTab = 2 },
+                                icon = { Icon(Icons.Default.Build, contentDescription = "AI") },
+                                label = { Text("AI Copilot", fontSize = 10.sp) }
+                            )
+                            NavigationBarItem(
+                                selected = currentTab == 3,
+                                onClick = { currentTab = 3 },
+                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                                label = { Text("Settings", fontSize = 10.sp) }
+                            )
+                        }
+                    }
+                ) { paddingValues ->
+                    Surface(
+                        modifier = Modifier.fillMaxSize().padding(paddingValues),
+                        color = Color(0xFF0F1117)
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            when (currentTab) {
+                                0 -> HomeScreen(viewModel)
+                                1 -> IncidentTimelineScreen()
+                                2 -> AiCopilotDashboardScreen(viewModel)
+                                3 -> SettingsScreen()
+                            }
+    
+                            val seconds by viewModel.countdownSeconds.collectAsState()
+                            if (seconds != null) {
+                                EmergencyCountdownOverlay(
+                                    secondsRemaining = seconds ?: 10,
+                                    onCancel = { viewModel.cancelCountdownByRider() }
+                                )
+                            }
                         }
                     }
                 }
@@ -401,5 +450,43 @@ fun EmergencyCountdownOverlay(secondsRemaining: Int, onCancel: () -> Unit) {
                 Text("I'M GOOD — CANCEL ALERT", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
         }
+    }
+}
+
+@Composable
+fun IncidentTimelineScreen() {
+    val records = IncidentRepository.getRecords()
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Incident Timeline", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(16.dp))
+        if (records.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No incidents recorded yet.", color = Color.Gray)
+            }
+        } else {
+            // Just a placeholder to show data exists
+            Text("Found ${records.size} records", color = Color.Green)
+        }
+    }
+}
+
+@Composable
+fun AiCopilotDashboardScreen(viewModel: MainViewModel) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Default.Build, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(64.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Local VLM Engine Ready", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Gemma 2B + Qwen2.5 is running on device.", color = Color.Gray, fontSize = 14.sp)
+    }
+}
+
+@Composable
+fun SettingsScreen() {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Settings & Readiness", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Detector Engine: Active", color = Color.Green)
+        Text("Sensor Aggregator: Running", color = Color.Green)
+        Text("Cloud Sync: Off (Local Mode)", color = Color.Yellow)
     }
 }

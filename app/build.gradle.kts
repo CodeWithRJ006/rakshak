@@ -62,6 +62,7 @@ android {
 }
 
 dependencies {
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("com.google.android.gms:play-services-location:21.2.0")
     // AndroidX core
     implementation(libs.androidx.core.ktx)
